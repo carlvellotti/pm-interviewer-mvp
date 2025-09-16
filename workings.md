@@ -94,6 +94,14 @@ Messages are accumulated and rendered in order. When the assistant emits `INTERV
 - `idle` → `connecting` → `in-progress` → `complete`
 - Microphone indicator, transcript list, and summary panel
 
+### Live audio visualization
+- A radial ring visualizer renders when the session is `in-progress`.
+- Audio source: the remote `MediaStream` from `RTCPeerConnection.ontrack`.
+- Web Audio graph: `MediaStreamAudioSourceNode → AnalyserNode` (time + frequency data; no connection to `destination` to avoid double audio).
+- Rendering: a `<canvas>` fills the gray/blue visualization panel via a container + `ResizeObserver` (accounts for device pixel ratio). Bars are log‑spaced around a circle; a center pulse reflects RMS loudness.
+- Lifecycle: initialized when the remote track arrives; cancelled and disconnected on end/reset or when the remote track ends. A shared `AudioContext` is created/resumed after the user starts the session.
+- Note: The temporary “Visualizer Playground” (local MP3 demo) was removed once the live visualizer was confirmed working.
+
 ---
 
 ## How to run

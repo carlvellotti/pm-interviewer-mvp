@@ -86,6 +86,19 @@ function App() {
   );
   const canStartInterview = status === 'idle' && selectedQuestionIds.length > 0;
 
+  // Shared AudioContext for visualizations
+  const audioContextRef = useRef(null);
+
+  // Remote (live) visualizer refs
+  const remoteVizCanvasRef = useRef(null);
+  const remoteAnalyserRef = useRef(null);
+  const remoteStreamSourceRef = useRef(null);
+  const remoteVizFrameRef = useRef(0);
+  const remoteVizDataArrayRef = useRef(null);
+  const remoteFreqArrayRef = useRef(null);
+  const remoteBinIndexRef = useRef(null);
+  const remoteVizContainerRef = useRef(null);
+
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
@@ -340,6 +353,17 @@ function App() {
         if (remoteAudioRef.current && remoteStream) {
           remoteAudioRef.current.srcObject = remoteStream;
         }
+        if (remoteStream) {
+          // Kick off the remote visualizer using the incoming audio stream
+          startRemoteVisualizer(remoteStream);
+          // Cleanup if the track ends
+          const track = event.track;
+          if (track) {
+            track.onended = () => {
+              stopRemoteVisualizer();
+            };
+          }
+        }
       };
 
       pc.oniceconnectionstatechange = () => {
@@ -478,6 +502,221 @@ function App() {
     summaryRequestedRef.current = false;
   };
 
+  // Live remote visualizer: start/stop
+  const stopRemoteVisualizer = () => {
+    if (remoteVizFrameRef.current) {
+      cancelAnimationFrame(remoteVizFrameRef.current);
+      remoteVizFrameRef.current = 0;
+    }
+    try {
+      if (remoteAnalyserRef.current) remoteAnalyserRef.current.disconnect();
+    } catch (e) {
+      // ignore
+    }
+    try {
+      if (remoteStreamSourceRef.current) remoteStreamSourceRef.current.disconnect();
+    } catch (e) {
+      // ignore
+    }
+    remoteAnalyserRef.current = null;
+    remoteStreamSourceRef.current = null;
+    remoteVizDataArrayRef.current = null;
+  };
+
+  const startRemoteVisualizer = async remoteStream => {
+    const canvas = remoteVizCanvasRef.current;
+    if (!remoteStream || !canvas) return;
+
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+
+    // Create or reuse shared AudioContext
+    const audioCtx = audioContextRef.current || new AC();
+    audioContextRef.current = audioCtx;
+    if (audioCtx.state === 'suspended') {
+      try { await audioCtx.resume(); } catch (e) { /* ignore */ }
+    }
+
+    // Create or reuse media stream source
+    if (!remoteStreamSourceRef.current) {
+      try {
+        remoteStreamSourceRef.current = audioCtx.createMediaStreamSource(remoteStream);
+      } catch (e) {
+        // ignore if already created
+      }
+    }
+
+    // Create or reuse analyser
+    const analyser = remoteAnalyserRef.current || audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.7;
+    remoteAnalyserRef.current = analyser;
+
+    // Connect stream -> analyser (no destination to avoid double audio with <audio>)
+    try {
+      remoteStreamSourceRef.current.connect(analyser);
+    } catch (e) {
+      // ignore duplicate connections
+    }
+
+    const ctx = canvas.getContext('2d');
+
+    // Allocate time-domain buffer once
+    const timeBufferLength = analyser.fftSize;
+    if (!remoteVizDataArrayRef.current || remoteVizDataArrayRef.current.length !== timeBufferLength) {
+      remoteVizDataArrayRef.current = new Uint8Array(timeBufferLength);
+    }
+
+    // Allocate frequency buffer once
+    const freqBufferLength = analyser.frequencyBinCount;
+    if (!remoteFreqArrayRef.current || remoteFreqArrayRef.current.length !== freqBufferLength) {
+      remoteFreqArrayRef.current = new Uint8Array(freqBufferLength);
+    }
+
+    // Build log-spaced bin indices once for a ring of bars
+    if (!remoteBinIndexRef.current) {
+      const numBars = 48; // visual density
+      const startIndex = 2; // skip DC/very low bins
+      const endIndex = freqBufferLength - 1;
+      const indices = [];
+      for (let i = 0; i < numBars; i++) {
+        const t = i / (numBars - 1);
+        const ratio = Math.pow(endIndex / startIndex, t);
+        const idx = Math.min(endIndex, Math.max(startIndex, Math.floor(startIndex * ratio)));
+        indices.push(idx);
+      }
+      remoteBinIndexRef.current = indices;
+    }
+
+    const draw = () => {
+      // Width/height may change if container resizes; read per-frame
+      const width = canvas.width;
+      const height = canvas.height;
+      const timeArray = remoteVizDataArrayRef.current;
+      const freqArray = remoteFreqArrayRef.current;
+      if (!timeArray || !freqArray) return;
+
+      // Pull data
+      analyser.getByteTimeDomainData(timeArray);
+      analyser.getByteFrequencyData(freqArray);
+
+      // Compute RMS for center pulse
+      let sumSquares = 0;
+      for (let i = 0; i < timeArray.length; i++) {
+        const v = (timeArray[i] - 128) / 128;
+        sumSquares += v * v;
+      }
+      const rms = Math.sqrt(sumSquares / timeArray.length);
+      const level = Math.max(0, Math.min(1, (rms - 0.02) / 0.3));
+
+      // Clear background
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#070b12';
+      ctx.fillRect(0, 0, width, height);
+
+      const cx = width / 2;
+      const cy = height / 2;
+      const minDim = Math.min(width, height);
+      const innerRadius = minDim * 0.28;
+      const maxBarLength = minDim * 0.22;
+
+      // Draw center pulse
+      const pulseRadius = innerRadius * (0.7 + 0.25 * level);
+      ctx.beginPath();
+      ctx.arc(cx, cy, pulseRadius, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(80, 200, 255, ${0.15 + 0.35 * level})`;
+      ctx.fill();
+
+      // Draw radial bars (log-spaced)
+      const indices = remoteBinIndexRef.current;
+      const numBars = indices.length;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < numBars; i++) {
+        const idx = indices[i];
+        const magnitude = (freqArray[idx] || 0) / 255;
+        // perceptual ease-in
+        const m = Math.pow(Math.max(0, magnitude - 0.05) / 0.95, 0.8);
+        const angle = (i / numBars) * Math.PI * 2 - Math.PI / 2;
+        const length = innerRadius + m * maxBarLength;
+        const x0 = cx + Math.cos(angle) * innerRadius;
+        const y0 = cy + Math.sin(angle) * innerRadius;
+        const x1 = cx + Math.cos(angle) * length;
+        const y1 = cy + Math.sin(angle) * length;
+
+        // Color by angle with brightness by magnitude
+        const hue = (220 + (i / numBars) * 120) % 360;
+        const light = 45 + 30 * m;
+        ctx.strokeStyle = `hsl(${hue}, 85%, ${light}%)`;
+        ctx.lineWidth = Math.max(2, minDim * 0.006);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      }
+
+      remoteVizFrameRef.current = requestAnimationFrame(draw);
+    };
+
+    // Start draw loop (it will keep running while stream is live)
+    remoteVizFrameRef.current = requestAnimationFrame(draw);
+  };
+
+  // Keep the remote visualization canvas sized to its container at device pixel ratio
+  useEffect(() => {
+    const canvas = remoteVizCanvasRef.current;
+    const container = remoteVizContainerRef.current;
+    if (!canvas || !container) return;
+
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    const resize = () => {
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      if (!cw || !ch) return;
+      const displayW = Math.floor(cw * dpr);
+      const displayH = Math.floor(ch * dpr);
+      if (canvas.width !== displayW || canvas.height !== displayH) {
+        canvas.width = displayW;
+        canvas.height = displayH;
+      }
+    };
+
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(container);
+    window.addEventListener('resize', resize);
+    return () => {
+      try { ro.disconnect(); } catch (e) { /* ignore */ }
+      window.removeEventListener('resize', resize);
+    };
+  }, [status]);
+
+  // Ensure the remote visualizer starts when the canvas becomes available (and stop otherwise)
+  useEffect(() => {
+    if (status === 'in-progress') {
+      const stream = remoteAudioRef.current && remoteAudioRef.current.srcObject;
+      if (stream) {
+        startRemoteVisualizer(stream);
+      }
+    } else {
+      stopRemoteVisualizer();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        try {
+          audioContextRef.current.close();
+        } catch (e) {
+          // ignore
+        }
+        audioContextRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <div className="app-container">
       <header className="hero">
@@ -578,11 +817,14 @@ function App() {
                 {status !== 'in-progress' && (
                   <p className="placeholder subtle">AI visualization will activate when interview starts</p>
                 )}
-                <div className="bars">
-                  {Array.from({ length: 32 }).map((_, i) => (
-                    <span key={i} className="bar" style={{ animationDelay: `${i * 0.05}s` }} />
-                  ))}
-                </div>
+                {status === 'in-progress' && (
+                  <div ref={remoteVizContainerRef} style={{ position: 'absolute', inset: 0 }}>
+                    <canvas
+                      ref={remoteVizCanvasRef}
+                      style={{ width: '100%', height: '100%', display: 'block', background: '#0b0f1a' }}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -626,6 +868,8 @@ function App() {
           )}
         </section>
       )}
+
+      {/* Visualizer Playground removed */}
 
       <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only" />
     </div>

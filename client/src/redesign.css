@@ -22,6 +22,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.25rem;
+  align-items: stretch;
 }
 
 .config-card,
@@ -31,6 +32,19 @@
   border-radius: 0.5rem;
   padding: 1rem;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Stretch cards to equal heights */
+.right-panel,
+.config-card {
+  display: flex;
+}
+
+.right-panel .panel,
+.config-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .config-card h2 {
@@ -112,7 +126,9 @@
   background: #f9fafb;
   border-radius: 0.5rem;
   padding: 0.75rem;
-  height: 24rem;
+  height: auto;
+  min-height: 24rem;
+  flex: 1;
   overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.875rem;
@@ -138,7 +154,9 @@
   border: 1px solid #1e1b4b;
   background: linear-gradient(180deg, #0f172a 0%, #111827 70%, #1e1b4b 100%);
   border-radius: 0.5rem;
-  height: 24rem;
+  height: auto;
+  min-height: 24rem;
+  flex: 1;
   overflow: hidden;
 }
 
