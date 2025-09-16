@@ -141,6 +141,55 @@ VITE_API_BASE_URL="https://your-server-url"
 
 ---
 
+## Deployment (Vercel)
+
+This repo is configured to deploy on Vercel with:
+- Frontend (Vite + React) built from `client/`
+- API routes implemented as Vercel Serverless Functions in `api/`
+- Realtime handled client→OpenAI directly using a client secret from `POST /api/realtime/session`
+
+### Files and config
+- `vercel.json` (minimal):
+  - `installCommand`: installs root and `client/` dependencies
+  - `buildCommand`: `cd client && npm run build`
+  - `outputDirectory`: `client/dist`
+- Serverless routes under `api/`:
+  - `api/health.js`
+  - `api/questions.js`
+  - `api/interview/start.js`
+  - `api/interview/respond.js`
+  - `api/interview/summary.js`
+  - `api/realtime/session.js`
+- Shared serverless helpers:
+  - `api/_lib/config.js` (models, personas, prompts, OpenAI client)
+  - `api/_lib/cors.js` (CORS helper)
+
+### Environment variables (Vercel Project → Settings → Environment Variables)
+- Required (Server): `OPENAI_API_KEY`
+- Optional (Server): `REALTIME_MODEL`, `REALTIME_VOICE`, `REALTIME_TRANSCRIBE_MODEL`
+- Frontend: `VITE_API_BASE_URL` → set to `/api`
+
+### Local development with Vercel Dev
+1. Ensure env files:
+   - Root `.env`: `OPENAI_API_KEY=...`
+   - `client/.env.local`: `VITE_API_BASE_URL="http://localhost:3000/api"`
+2. Run API emulator:
+   - `npx vercel@latest dev` (serves API at `http://localhost:3000`)
+3. Run Vite (separate terminal):
+   - `cd client && npm run dev`
+4. Verify:
+   - `curl http://localhost:3000/api/health`
+   - App loads and questions populate
+
+### Deploy
+- Ensure Vercel env vars are set (see above)
+- Deploy: `npx vercel@latest --prod`
+- Smoke test on production domain:
+  - `GET /api/health`, `GET /api/questions`
+  - Start interview → hear audio → `INTERVIEW_COMPLETE` → summary renders
+
+---
+
 ## TypeScript UI demo (separate folder)
 
 Folder: `91363a6b-c3c6-44f9-8cf7-3dd5a2323680/`
@@ -153,7 +202,9 @@ Folder: `91363a6b-c3c6-44f9-8cf7-3dd5a2323680/`
 ---
 
 ## Pointers to key files
-- Backend: `server/index.js`
+- Backend (legacy local server): `server/index.js`
 - Frontend: `client/src/App.jsx`
+- Serverless API (Vercel): `api/` directory
+- Deployment spec: `DEPLOYMENT.md`
 - API reference notes: `Realtime API.md` (in repo root and also inside `interview-bot-test/`)
 
