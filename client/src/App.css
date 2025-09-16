@@ -46,6 +46,103 @@
   color: #364152;
 }
 
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.question-select {
+  width: 100%;
+  min-height: 180px;
+  border: 1px solid #c7cedb;
+  border-radius: 8px;
+  padding: 0.5rem;
+  font-size: 0.95rem;
+  background: white;
+  color: #1f2933;
+}
+
+.question-select option {
+  padding: 0.4rem;
+}
+
+.helper-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #52606d;
+}
+
+.helper-text.subtle {
+  font-size: 0.8rem;
+  color: #8792a2;
+}
+
+.selected-questions {
+  background: #eef2ff;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  box-shadow: inset 0 0 0 1px rgba(76, 81, 191, 0.08);
+}
+
+.selected-questions h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+  color: #312e81;
+}
+
+.selected-questions ol {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: #1f2933;
+}
+
+.selected-questions .placeholder {
+  text-align: left;
+  margin: 0;
+  color: #6b7280;
+}
+
+.difficulty-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.difficulty-button {
+  text-align: left;
+  border: 1px solid #c7cedb;
+  background: white;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+  cursor: pointer;
+}
+
+.difficulty-button .difficulty-label {
+  font-weight: 600;
+  color: #1f2933;
+}
+
+.difficulty-button .difficulty-description {
+  font-size: 0.9rem;
+  color: #52606d;
+}
+
+.difficulty-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(76, 81, 191, 0.08);
+}
+
+.difficulty-button.active {
+  border-color: #4c51bf;
+  box-shadow: 0 0 0 2px rgba(76, 81, 191, 0.2);
+  background: #eef2ff;
+}
+
 .interview-card {
   background: white;
   border-radius: 12px;
@@ -206,6 +303,32 @@ button.secondary:not(:disabled):hover {
   margin: 0;
   font-family: inherit;
   color: #1f2933;
+}
+
+.summary h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+  color: #3730a3;
+}
+
+.summary-block + .summary-block {
+  margin-top: 1.25rem;
+}
+
+.summary-block p {
+  margin: 0;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.summary-block ul {
+  padding-left: 1.25rem;
+  margin: 0;
+  color: #1f2933;
+}
+
+.summary-block li + li {
+  margin-top: 0.5rem;
 }
 
 .sr-only {

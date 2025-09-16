@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
@@ -22,12 +22,41 @@ function normaliseDelta(delta) {
   return '';
 }
 
+function parseCoachingSummary(raw) {
+  if (!raw) return null;
+  const trimmed = typeof raw === 'string' ? raw.trim() : raw;
+  if (!trimmed) return null;
+
+  try {
+    const parsed = typeof trimmed === 'string' ? JSON.parse(trimmed) : trimmed;
+    const summaryText = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+    const strengthsList = Array.isArray(parsed.strengths)
+      ? parsed.strengths.filter(item => typeof item === 'string' && item.trim().length > 0)
+      : [];
+    const improvementsList = Array.isArray(parsed.improvements)
+      ? parsed.improvements.filter(item => typeof item === 'string' && item.trim().length > 0)
+      : [];
+
+    return {
+      summary: summaryText,
+      strengths: strengthsList,
+      improvements: improvementsList
+    };
+  } catch (error) {
+    console.warn('Could not parse coaching summary JSON', error);
+    return null;
+  }
+}
+
 function App() {
   const [status, setStatus] = useState('idle'); // idle | connecting | in-progress | complete
   const [error, setError] = useState('');
   const [summary, setSummary] = useState('');
-  const [questions, setQuestions] = useState([]);
+  const [questionOptions, setQuestionOptions] = useState([]);
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState([]);
   const [evaluationFocus, setEvaluationFocus] = useState([]);
+  const [personaOptions, setPersonaOptions] = useState([]);
+  const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
   const [displayMessages, setDisplayMessages] = useState([]);
   const [isMicActive, setIsMicActive] = useState(false);
 
@@ -41,6 +70,19 @@ function App() {
   const summaryRequestedRef = useRef(false);
   const instructionsRef = useRef('');
   const statusRef = useRef(status);
+  const coaching = useMemo(() => parseCoachingSummary(summary), [summary]);
+  const selectedQuestions = useMemo(() => {
+    if (questionOptions.length === 0 || selectedQuestionIds.length === 0) {
+      return [];
+    }
+    const map = new Map(questionOptions.map(option => [option.id, option]));
+    return selectedQuestionIds.map(id => map.get(id)).filter(Boolean);
+  }, [questionOptions, selectedQuestionIds]);
+  const activePersona = useMemo(
+    () => personaOptions.find(persona => persona.id === selectedDifficulty) || null,
+    [personaOptions, selectedDifficulty]
+  );
+  const canStartInterview = status === 'idle' && selectedQuestionIds.length > 0;
 
   useEffect(() => {
     statusRef.current = status;
@@ -54,8 +96,21 @@ function App() {
           throw new Error('Failed to load questions');
         }
         const data = await response.json();
-        setQuestions(data.questions ?? []);
-        setEvaluationFocus(data.evaluationFocus ?? []);
+        const questionList = Array.isArray(data.questions) ? data.questions : [];
+        const personaList = Array.isArray(data.personas) ? data.personas : [];
+        const defaults = data.defaults ?? {};
+
+        setQuestionOptions(questionList);
+        setPersonaOptions(personaList);
+        setEvaluationFocus(Array.isArray(data.evaluationFocus) ? data.evaluationFocus : []);
+        setSelectedQuestionIds(
+          Array.isArray(defaults.questionIds) && defaults.questionIds.length > 0
+            ? defaults.questionIds
+            : questionList.slice(0, 3).map(option => option.id)
+        );
+        if (typeof defaults.difficulty === 'string') {
+          setSelectedDifficulty(defaults.difficulty);
+        }
       } catch (err) {
         console.error(err);
         setError('Unable to load interview configuration.');
@@ -64,6 +119,15 @@ function App() {
 
     loadConfiguration();
   }, []);
+
+  const handleQuestionSelect = event => {
+    const values = Array.from(event.target.selectedOptions).map(option => option.value);
+    setSelectedQuestionIds(values);
+  };
+
+  const handleDifficultyChange = id => {
+    setSelectedDifficulty(id);
+  };
 
   const commitMessages = () => {
     const ordered = messageOrderRef.current
@@ -213,6 +277,10 @@ function App() {
 
   const startInterview = async () => {
     if (status === 'connecting' || status === 'in-progress') return;
+    if (selectedQuestionIds.length === 0) {
+      setError('Select at least one question to practice.');
+      return;
+    }
     setError('');
     setSummary('');
     summaryRequestedRef.current = false;
@@ -225,7 +293,12 @@ function App() {
       setStatus('connecting');
 
       const tokenResponse = await fetch(`${API_BASE_URL}/realtime/session`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionIds: selectedQuestionIds,
+          difficulty: selectedDifficulty
+        })
       });
 
       if (!tokenResponse.ok) {
@@ -405,17 +478,54 @@ function App() {
       </header>
 
       <section className="config">
-        <h2>Interview Focus</h2>
+        <h2>Interview Setup</h2>
         <div className="config-grid">
-          <div>
-            <h3>Primary Questions</h3>
-            <ol>
-              {questions.map((question, index) => (
-                <li key={index}>{question}</li>
+          <div className="config-section">
+            <h3>Choose Questions</h3>
+            <p className="helper-text">Pick the prompts you want to practice in this run.</p>
+            <select
+              multiple
+              className="question-select"
+              value={selectedQuestionIds}
+              onChange={handleQuestionSelect}
+            >
+              {questionOptions.map(option => (
+                <option key={option.id} value={option.id}>
+                  {option.prompt}
+                </option>
               ))}
-            </ol>
+            </select>
+            <p className="helper-text subtle">Hold Cmd/Ctrl to select multiple questions.</p>
+            <div className="selected-questions">
+              <h4>Included in this interview</h4>
+              {selectedQuestions.length > 0 ? (
+                <ol>
+                  {selectedQuestions.map(question => (
+                    <li key={question.id}>{question.prompt}</li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="placeholder">Select at least one question to begin.</p>
+              )}
+            </div>
           </div>
-          <div>
+          <div className="config-section">
+            <h3>Interview Style</h3>
+            <div className="difficulty-options">
+              {personaOptions.map(persona => (
+                <button
+                  key={persona.id}
+                  type="button"
+                  className={`difficulty-button ${selectedDifficulty === persona.id ? 'active' : ''}`}
+                  onClick={() => handleDifficultyChange(persona.id)}
+                >
+                  <span className="difficulty-label">{persona.label}</span>
+                  <span className="difficulty-description">{persona.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="config-section">
             <h3>What the interviewer listens for</h3>
             <ul>
               {evaluationFocus.map((item, index) => (
@@ -443,8 +553,8 @@ function App() {
 
         <div className="controls">
           {status === 'idle' && (
-            <button className="primary" onClick={startInterview}>
-              Start Voice Interview
+            <button className="primary" onClick={startInterview} disabled={!canStartInterview}>
+              {activePersona ? `Start ${activePersona.label} Interview` : 'Start Voice Interview'}
             </button>
           )}
 
@@ -482,7 +592,38 @@ function App() {
       {summary && (
         <section className="summary">
           <h2>Coaching Advice</h2>
-          <pre>{summary}</pre>
+          {coaching ? (
+            <>
+              {coaching.summary && (
+                <div className="summary-block">
+                  <h3>Summary of Overall Performance</h3>
+                  <p>{coaching.summary}</p>
+                </div>
+              )}
+              {coaching.strengths.length > 0 && (
+                <div className="summary-block">
+                  <h3>Strengths</h3>
+                  <ul>
+                    {coaching.strengths.map((item, index) => (
+                      <li key={index}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {coaching.improvements.length > 0 && (
+                <div className="summary-block">
+                  <h3>Improvements</h3>
+                  <ul>
+                    {coaching.improvements.map((item, index) => (
+                      <li key={index}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <pre>{summary}</pre>
+          )}
         </section>
       )}
 

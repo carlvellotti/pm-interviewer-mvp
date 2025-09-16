@@ -33,9 +33,10 @@ This project provides a minimal full-stack prototype for a GPT-powered interview
    Vite serves the React app at the port it prints (typically `5173`).
 
 5. **Try the flow**
-   - Click **Start Voice Interview** and grant microphone access when prompted.
-   - The interviewer greets you aloud and follows the preset question order, asking follow-ups as needed.
-   - Live transcripts appear as you and the interviewer speak. When the interviewer says `INTERVIEW_COMPLETE`, the session ends and the coaching summary is generated automatically.
+   - Pick the questions you want to practice from the multi-select list (the preview updates as you choose).
+   - Choose an interview style (Easy, Medium, Hard). Each persona adjusts tone, follow-up aggressiveness, voice, and silence tolerance.
+   - Click **Start Voice Interview** and grant microphone access when prompted. The interviewer will follow the questions you picked, ask persona-appropriate follow-ups, and close by saying `INTERVIEW_COMPLETE`.
+   - Live transcripts appear as you and the interviewer speak. After the close, the backend summarizes the interview into structured coaching feedback.
 
 ## Environment configuration
 
@@ -48,5 +49,5 @@ VITE_API_BASE_URL="https://your-server-url"
 
 - Capture recording metrics (latency, dropouts) and surface connection quality inside the UI.
 - Persist transcripts/interview metadata for later review or personalization.
-- Allow admins to edit question lists and evaluation focus areas directly from the UI.
+- Allow admins to edit question lists, evaluation focus areas, and persona definitions from the UI.
 - Introduce authentication plus candidate history so returning users can track progress.
