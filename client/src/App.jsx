@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
+import './redesign.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 
@@ -59,6 +60,7 @@ function App() {
   const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
   const [displayMessages, setDisplayMessages] = useState([]);
   const [isMicActive, setIsMicActive] = useState(false);
+  const [displayMode, setDisplayMode] = useState('equalizer'); // equalizer | transcript
 
   const remoteAudioRef = useRef(null);
   const peerRef = useRef(null);
@@ -123,6 +125,12 @@ function App() {
   const handleQuestionSelect = event => {
     const values = Array.from(event.target.selectedOptions).map(option => option.value);
     setSelectedQuestionIds(values);
+  };
+
+  const handleQuestionToggle = id => {
+    setSelectedQuestionIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
   };
 
   const handleDifficultyChange = id => {
@@ -472,120 +480,112 @@ function App() {
 
   return (
     <div className="app-container">
-      <header className="app-header">
-        <h1>Interview Assistant</h1>
-        <p className="tagline">Practice with realtime voice conversations and get tailored feedback.</p>
+      <header className="hero">
+        <h1>AI Interview Assistant</h1>
+        <p className="tagline">Prepare for your next interview with AI assistance</p>
       </header>
-
-      <section className="config">
-        <h2>Interview Setup</h2>
-        <div className="config-grid">
-          <div className="config-section">
-            <h3>Choose Questions</h3>
-            <p className="helper-text">Pick the prompts you want to practice in this run.</p>
-            <select
-              multiple
-              className="question-select"
-              value={selectedQuestionIds}
-              onChange={handleQuestionSelect}
-            >
-              {questionOptions.map(option => (
-                <option key={option.id} value={option.id}>
-                  {option.prompt}
-                </option>
-              ))}
-            </select>
-            <p className="helper-text subtle">Hold Cmd/Ctrl to select multiple questions.</p>
-            <div className="selected-questions">
-              <h4>Included in this interview</h4>
-              {selectedQuestions.length > 0 ? (
-                <ol>
-                  {selectedQuestions.map(question => (
-                    <li key={question.id}>{question.prompt}</li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="placeholder">Select at least one question to begin.</p>
-              )}
-            </div>
-          </div>
-          <div className="config-section">
-            <h3>Interview Style</h3>
-            <div className="difficulty-options">
-              {personaOptions.map(persona => (
-                <button
-                  key={persona.id}
-                  type="button"
-                  className={`difficulty-button ${selectedDifficulty === persona.id ? 'active' : ''}`}
-                  onClick={() => handleDifficultyChange(persona.id)}
-                >
-                  <span className="difficulty-label">{persona.label}</span>
-                  <span className="difficulty-description">{persona.description}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="config-section">
-            <h3>What the interviewer listens for</h3>
-            <ul>
-              {evaluationFocus.map((item, index) => (
-                <li key={index}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
 
       {error && <div className="error">{error}</div>}
 
-      <section className="interview-card">
-        <div className="conversation">
-          {displayMessages.length === 0 && (
-            <p className="placeholder">Press start to connect with the interviewer.</p>
-          )}
-          {displayMessages.map(message => (
-            <div key={message.id} className={`message ${message.role}`}>
-              <span className="role">{message.role === 'assistant' ? 'Interviewer' : 'You'}:</span>
-              <span className="content">{message.text}</span>
-            </div>
-          ))}
-        </div>
+      <section className="redesign-grid">
+        <div className="config-card">
+          <h2>Select Interview Questions</h2>
+          <div className="question-checkboxes">
+            {questionOptions.map(option => (
+              <label key={option.id} className="question-row">
+                <input
+                  type="checkbox"
+                  checked={selectedQuestionIds.includes(option.id)}
+                  onChange={() => handleQuestionToggle(option.id)}
+                />
+                <span>{option.prompt}</span>
+              </label>
+            ))}
+          </div>
+          <p className="helper-text subtle">Selected: {selectedQuestionIds.length} / {questionOptions.length}</p>
 
-        <div className="controls">
+          <h2>Select Difficulty Level</h2>
+          <div className="pill-options">
+            {personaOptions.map(persona => (
+              <button
+                key={persona.id}
+                type="button"
+                className={`pill ${selectedDifficulty === persona.id ? 'active' : ''}`}
+                onClick={() => handleDifficultyChange(persona.id)}
+              >
+                {persona.label}
+              </button>
+            ))}
+          </div>
+
           {status === 'idle' && (
-            <button className="primary" onClick={startInterview} disabled={!canStartInterview}>
-              {activePersona ? `Start ${activePersona.label} Interview` : 'Start Voice Interview'}
+            <button className="primary full" onClick={startInterview} disabled={!canStartInterview}>
+              Start Interview
             </button>
           )}
-
           {status === 'connecting' && (
-            <button className="primary" disabled>
-              Connecting…
-            </button>
+            <button className="primary full" disabled>Connecting…</button>
           )}
-
           {status === 'in-progress' && (
-            <div className="voice-status">
+            <div className="voice-status column">
               <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
                 <span className="dot" />
                 <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
               </div>
-              <button className="secondary" onClick={resetInterview}>
-                End Session
-              </button>
+              <button className="secondary full" onClick={resetInterview}>End Session</button>
+            </div>
+          )}
+          {status === 'complete' && (
+            <div className="action-row">
+              <button className="secondary" onClick={resetInterview}>Reset</button>
+              <button className="primary" onClick={startInterview}>Restart Interview</button>
             </div>
           )}
 
-          {status === 'complete' && (
-            <div className="action-row">
-              <button className="secondary" onClick={resetInterview}>
-                Reset
-              </button>
-              <button className="primary" onClick={startInterview}>
-                Restart Interview
+          {status === 'idle' && selectedQuestionIds.length === 0 && (
+            <p className="warning-text">Please select at least one question to start the interview.</p>
+          )}
+        </div>
+
+        <div className="right-panel">
+          <div className="panel">
+            <div className="panel-header">
+              <h3>{displayMode === 'equalizer' ? 'AI Visualization' : 'Interview Transcript'}</h3>
+              <button
+                type="button"
+                className="toggle-button"
+                onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
+              >
+                Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
               </button>
             </div>
-          )}
+
+            {displayMode === 'transcript' ? (
+              <div className={`transcript-view ${status === 'in-progress' ? 'active' : ''}`}>
+                {displayMessages.length === 0 ? (
+                  <span className="placeholder subtle">Transcript will appear here once the interview starts…</span>
+                ) : (
+                  <pre>
+                    {displayMessages
+                      .map(m => `${m.role === 'assistant' ? 'Interviewer' : 'You'}: ${m.text}`)
+                      .join('\n\n')}
+                    {status === 'in-progress' ? '▋' : ''}
+                  </pre>
+                )}
+              </div>
+            ) : (
+              <div className={`equalizer ${status === 'in-progress' ? 'active' : ''}`}>
+                {status !== 'in-progress' && (
+                  <p className="placeholder subtle">AI visualization will activate when interview starts</p>
+                )}
+                <div className="bars">
+                  {Array.from({ length: 32 }).map((_, i) => (
+                    <span key={i} className="bar" style={{ animationDelay: `${i * 0.05}s` }} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
