@@ -92,15 +92,20 @@ Messages are accumulated and rendered in order. When the assistant emits `INTERV
 
 ### UI states
 - `idle` → `connecting` → `in-progress` → `complete`
-- Microphone indicator, transcript list, and summary panel
+- Clean two-column layout with question selection on left, visualization/transcript on right
+- Microphone indicator moved to visualization panel header during interviews
+- Mobile responsive design that stacks vertically on screens ≤768px
+- Toggle between AI visualization and transcript view
 
 ### Live audio visualization
-- A radial ring visualizer renders when the session is `in-progress`.
+- A radial ring visualizer renders when the session is `in-progress`, with a static "resting state" version shown when idle.
 - Audio source: the remote `MediaStream` from `RTCPeerConnection.ontrack`.
 - Web Audio graph: `MediaStreamAudioSourceNode → AnalyserNode` (time + frequency data; no connection to `destination` to avoid double audio).
-- Rendering: a `<canvas>` fills the gray/blue visualization panel via a container + `ResizeObserver` (accounts for device pixel ratio). Bars are log‑spaced around a circle; a center pulse reflects RMS loudness.
+- Rendering: a `<canvas>` fills the visualization panel via a container + `ResizeObserver` (accounts for device pixel ratio). Bars are log‑spaced around a circle with unique frequency bin mapping to ensure all bars respond to audio; a center pulse reflects RMS loudness.
+- Frequency range: Optimized to focus on human audio spectrum (0-8kHz) rather than full spectrum to ensure all visualization bars are active during speech.
 - Lifecycle: initialized when the remote track arrives; cancelled and disconnected on end/reset or when the remote track ends. A shared `AudioContext` is created/resumed after the user starts the session.
-- Note: The temporary “Visualizer Playground” (local MP3 demo) was removed once the live visualizer was confirmed working.
+- Static state: When not in an interview, shows the same visualization structure but dormant (no audio data).
+- Note: The temporary "Visualizer Playground" (local MP3 demo) was removed once the live visualizer was confirmed working.
 
 ---
 

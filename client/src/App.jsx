@@ -577,15 +577,49 @@ function App() {
     if (!remoteBinIndexRef.current) {
       const numBars = 48; // visual density
       const startIndex = 2; // skip DC/very low bins
-      const endIndex = freqBufferLength - 1;
+      // Cap at reasonable frequency range for human audio (roughly 8kHz instead of full spectrum)
+      const endIndex = Math.min(freqBufferLength - 1, Math.floor(freqBufferLength * 0.3));
+      const availableRange = endIndex - startIndex;
+      
+      // Ensure we have enough unique bins for all bars
+      const actualNumBars = Math.min(numBars, availableRange);
+      
       const indices = [];
-      for (let i = 0; i < numBars; i++) {
-        const t = i / (numBars - 1);
+      const usedIndices = new Set();
+      
+      for (let i = 0; i < actualNumBars; i++) {
+        const t = i / (actualNumBars - 1);
         const ratio = Math.pow(endIndex / startIndex, t);
-        const idx = Math.min(endIndex, Math.max(startIndex, Math.floor(startIndex * ratio)));
-        indices.push(idx);
+        let idx = Math.min(endIndex, Math.max(startIndex, Math.floor(startIndex * ratio)));
+        
+        // Ensure uniqueness - if this index is already used, find the next available one
+        while (usedIndices.has(idx) && idx <= endIndex) {
+          idx++;
+        }
+        
+        if (idx <= endIndex) {
+          indices.push(idx);
+          usedIndices.add(idx);
+        }
       }
+      
+      // If we have fewer unique indices than requested bars, pad with remaining available indices
+      if (indices.length < numBars) {
+        for (let idx = startIndex; idx <= endIndex && indices.length < numBars; idx++) {
+          if (!usedIndices.has(idx)) {
+            indices.push(idx);
+            usedIndices.add(idx);
+          }
+        }
+      }
+      
       remoteBinIndexRef.current = indices;
+      
+      // Debug: Log the frequency bin assignments
+      if (import.meta.env.DEV) {
+        console.log('Frequency bin assignments:', indices);
+        console.log('Total bars:', indices.length, 'Unique bins:', new Set(indices).size);
+      }
     }
 
     const draw = () => {
@@ -635,8 +669,16 @@ function App() {
       for (let i = 0; i < numBars; i++) {
         const idx = indices[i];
         const magnitude = (freqArray[idx] || 0) / 255;
-        // perceptual ease-in
-        const m = Math.pow(Math.max(0, magnitude - 0.05) / 0.95, 0.8);
+        
+        // Debug: Log bars that should be active but aren't
+        if (import.meta.env.DEV && i % 10 === 0) { // Log every 10th bar to avoid spam
+          console.log(`Bar ${i}: freq bin ${idx}, magnitude ${magnitude.toFixed(3)}, raw value ${freqArray[idx]}`);
+        }
+        
+        // perceptual ease-in with minimum baseline activity
+        const baselineActivity = 0.02; // Small amount to ensure all bars show some life
+        const adjustedMagnitude = Math.max(baselineActivity, magnitude);
+        const m = Math.pow(Math.max(0, adjustedMagnitude - 0.05) / 0.95, 0.8);
         const angle = (i / numBars) * Math.PI * 2 - Math.PI / 2;
         const length = innerRadius + m * maxBarLength;
         const x0 = cx + Math.cos(angle) * innerRadius;
@@ -691,6 +733,109 @@ function App() {
     };
   }, [status]);
 
+  // Static visualizer (no audio data)
+  const startStaticVisualizer = () => {
+    const canvas = remoteVizCanvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    
+    // Build the same log-spaced bin indices for static display
+    if (!remoteBinIndexRef.current) {
+      const numBars = 48;
+      const startIndex = 2;
+      // Cap at reasonable frequency range for human audio (roughly 8kHz instead of full spectrum)
+      const endIndex = Math.min(255, Math.floor(255 * 0.3));
+      const availableRange = endIndex - startIndex;
+      
+      // Ensure we have enough unique bins for all bars
+      const actualNumBars = Math.min(numBars, availableRange);
+      
+      const indices = [];
+      const usedIndices = new Set();
+      
+      for (let i = 0; i < actualNumBars; i++) {
+        const t = i / (actualNumBars - 1);
+        const ratio = Math.pow(endIndex / startIndex, t);
+        let idx = Math.min(endIndex, Math.max(startIndex, Math.floor(startIndex * ratio)));
+        
+        // Ensure uniqueness - if this index is already used, find the next available one
+        while (usedIndices.has(idx) && idx <= endIndex) {
+          idx++;
+        }
+        
+        if (idx <= endIndex) {
+          indices.push(idx);
+          usedIndices.add(idx);
+        }
+      }
+      
+      // If we have fewer unique indices than requested bars, pad with remaining available indices
+      if (indices.length < numBars) {
+        for (let idx = startIndex; idx <= endIndex && indices.length < numBars; idx++) {
+          if (!usedIndices.has(idx)) {
+            indices.push(idx);
+            usedIndices.add(idx);
+          }
+        }
+      }
+      
+      remoteBinIndexRef.current = indices;
+    }
+
+    const drawStatic = () => {
+      const width = canvas.width;
+      const height = canvas.height;
+
+      // Clear background
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#070b12';
+      ctx.fillRect(0, 0, width, height);
+
+      const cx = width / 2;
+      const cy = height / 2;
+      const minDim = Math.min(width, height);
+      const innerRadius = minDim * 0.28;
+      const maxBarLength = minDim * 0.22;
+
+      // Draw center pulse (static, resting state)
+      const level = 0; // No audio, so level is 0
+      const pulseRadius = innerRadius * (0.7 + 0.25 * level);
+      ctx.beginPath();
+      ctx.arc(cx, cy, pulseRadius, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(80, 200, 255, ${0.15 + 0.35 * level})`;
+      ctx.fill();
+
+      // Draw radial bars (static, minimal length)
+      const indices = remoteBinIndexRef.current;
+      const numBars = indices.length;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < numBars; i++) {
+        const magnitude = 0; // No audio data
+        const m = Math.pow(Math.max(0, magnitude - 0.05) / 0.95, 0.8);
+        const angle = (i / numBars) * Math.PI * 2 - Math.PI / 2;
+        const length = innerRadius + m * maxBarLength;
+        const x0 = cx + Math.cos(angle) * innerRadius;
+        const y0 = cy + Math.sin(angle) * innerRadius;
+        const x1 = cx + Math.cos(angle) * length;
+        const y1 = cy + Math.sin(angle) * length;
+
+        // Color by angle with brightness by magnitude (dim for static)
+        const hue = (220 + (i / numBars) * 120) % 360;
+        const light = 45 + 30 * m;
+        ctx.strokeStyle = `hsl(${hue}, 85%, ${light}%)`;
+        ctx.lineWidth = Math.max(2, minDim * 0.006);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      }
+    };
+
+    drawStatic();
+  };
+
   // Ensure the remote visualizer starts when the canvas becomes available (and stop otherwise)
   useEffect(() => {
     if (status === 'in-progress') {
@@ -700,6 +845,8 @@ function App() {
       }
     } else {
       stopRemoteVisualizer();
+      // Show static version when not in progress
+      setTimeout(() => startStaticVisualizer(), 50); // Small delay to ensure canvas is ready
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
@@ -766,13 +913,7 @@ function App() {
             <button className="primary full" disabled>Connecting…</button>
           )}
           {status === 'in-progress' && (
-            <div className="voice-status column">
-              <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
-                <span className="dot" />
-                <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
-              </div>
-              <button className="secondary full" onClick={resetInterview}>End Session</button>
-            </div>
+            <button className="secondary full" onClick={resetInterview}>End Session</button>
           )}
           {status === 'complete' && (
             <div className="action-row">
@@ -789,7 +930,14 @@ function App() {
         <div className="right-panel">
           <div className="panel">
             <div className="panel-header">
-              <h3>{displayMode === 'equalizer' ? 'AI Visualization' : 'Interview Transcript'}</h3>
+              {status === 'in-progress' ? (
+                <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
+                  <span className="dot" />
+                  <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
+                </div>
+              ) : (
+                <div></div>
+              )}
               <button
                 type="button"
                 className="toggle-button"
@@ -815,7 +963,12 @@ function App() {
             ) : (
               <div className={`equalizer ${status === 'in-progress' ? 'active' : ''}`}>
                 {status !== 'in-progress' && (
-                  <p className="placeholder subtle">AI visualization will activate when interview starts</p>
+                  <div ref={remoteVizContainerRef} style={{ position: 'absolute', inset: 0 }}>
+                    <canvas
+                      ref={remoteVizCanvasRef}
+                      style={{ width: '100%', height: '100%', display: 'block', background: '#0b0f1a' }}
+                    />
+                  </div>
                 )}
                 {status === 'in-progress' && (
                   <div ref={remoteVizContainerRef} style={{ position: 'absolute', inset: 0 }}>
