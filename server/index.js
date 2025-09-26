@@ -4,6 +4,11 @@ import { OpenAI } from 'openai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  getInterviewById,
+  listInterviews,
+  saveInterview
+} from './interviewStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -291,11 +296,71 @@ app.post('/interview/summary', async (req, res) => {
     if (!summaryMessage) {
       return res.status(500).json({ error: 'No summary generated.' });
     }
+    const summaryText = summaryMessage.content;
 
-    res.json({ summary: summaryMessage.content });
+    res.json({ summary: summaryText });
   } catch (error) {
     console.error('Error generating summary:', error);
     res.status(500).json({ error: 'Failed to generate summary.' });
+  }
+});
+
+app.post('/interview/save', (req, res) => {
+  try {
+    const {
+      id,
+      title,
+      transcript,
+      evaluation,
+      metadata,
+      createdAt,
+      updatedAt
+    } = req.body ?? {};
+
+    if (!Array.isArray(transcript)) {
+      return res.status(400).json({ error: 'Transcript must be an array.' });
+    }
+    if (typeof evaluation !== 'object' || evaluation === null) {
+      return res.status(400).json({ error: 'Evaluation must be provided.' });
+    }
+
+    const record = saveInterview({
+      id,
+      title,
+      transcript,
+      evaluation,
+      metadata,
+      createdAt,
+      updatedAt
+    });
+
+    res.status(201).json(record);
+  } catch (error) {
+    console.error('Error saving interview:', error);
+    res.status(500).json({ error: 'Failed to save interview.' });
+  }
+});
+
+app.get('/interview/history', (_req, res) => {
+  try {
+    const records = listInterviews();
+    res.json({ interviews: records });
+  } catch (error) {
+    console.error('Error listing interviews:', error);
+    res.status(500).json({ error: 'Failed to list interviews.' });
+  }
+});
+
+app.get('/interview/history/:id', (req, res) => {
+  try {
+    const record = getInterviewById(req.params.id);
+    if (!record) {
+      return res.status(404).json({ error: 'Interview not found.' });
+    }
+    res.json(record);
+  } catch (error) {
+    console.error('Error fetching interview:', error);
+    res.status(500).json({ error: 'Failed to fetch interview.' });
   }
 });
 

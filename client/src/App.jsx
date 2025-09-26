@@ -1,8 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import './App.css';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './redesign.css';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+const API_BASE_URL = (() => {
+  const configured = import.meta.env.VITE_API_BASE_URL;
+  if (configured && typeof configured === 'string' && configured.trim().length > 0) {
+    return configured.replace(/\/$/, '');
+  }
+
+  if (typeof window !== 'undefined') {
+    const { hostname, origin } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:4000';
+    }
+    return `${origin.replace(/\/$/, '')}/api`;
+  }
+
+  return 'http://localhost:4000';
+})();
 
 function extractTextFromContent(content) {
   if (!Array.isArray(content)) return '';
@@ -49,6 +63,127 @@ function parseCoachingSummary(raw) {
   }
 }
 
+const sidebarDateFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric'
+});
+
+const sidebarTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: 'numeric',
+  minute: '2-digit'
+});
+
+const detailTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short'
+});
+
+const headerTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'full',
+  timeStyle: 'short'
+});
+
+function parseIsoDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function sortInterviewsByDate(records) {
+  if (!Array.isArray(records)) return [];
+  return [...records].sort((a, b) => {
+    const aDate = parseIsoDate(a?.createdAt) || 0;
+    const bDate = parseIsoDate(b?.createdAt) || 0;
+    return (bDate || 0) - (aDate || 0);
+  });
+}
+
+function formatSidebarTimestamp(value) {
+  const date = parseIsoDate(value);
+  if (!date) return '';
+  return `${sidebarDateFormatter.format(date)} · ${sidebarTimeFormatter.format(date)}`;
+}
+
+function formatDetailTimestamp(value) {
+  const date = parseIsoDate(value);
+  if (!date) return '';
+  return detailTimestampFormatter.format(date);
+}
+
+function formatHeaderTimestamp(value) {
+  const date = parseIsoDate(value);
+  if (!date) return '';
+  return headerTimestampFormatter.format(date);
+}
+
+function deriveSessionTitleFromQuestions(questions) {
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return 'Practice Interview';
+  }
+  const primary = questions[0]?.prompt || questions[0]?.label || null;
+  if (!primary) {
+    return 'Practice Interview';
+  }
+  return primary.length > 80 ? `${primary.slice(0, 77)}…` : primary;
+}
+
+function getRecordTitle(record) {
+  if (!record) return 'Interview';
+  if (typeof record.title === 'string' && record.title.trim().length > 0) {
+    return record.title.trim();
+  }
+  const timestamp = formatDetailTimestamp(record.createdAt);
+  return timestamp ? `Interview on ${timestamp}` : 'Interview';
+}
+
+function getListDisplayTitle(record) {
+  if (!record) return 'Interview';
+  if (typeof record.title === 'string' && record.title.trim().length > 0) {
+    return record.title.trim();
+  }
+  return formatSidebarTimestamp(record.createdAt) || 'Interview';
+}
+
+function shortenSummary(text, limit = 110) {
+  if (!text || typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (trimmed.length <= limit) return trimmed;
+  return `${trimmed.slice(0, limit - 1)}…`;
+}
+
+function formatDifficultyLabel(value) {
+  if (typeof value !== 'string' || value.length === 0) {
+    return null;
+  }
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function normaliseTranscriptEntryContent(content) {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map(part => {
+        if (!part) return '';
+        if (typeof part === 'string') return part;
+        if (typeof part === 'object') {
+          if (typeof part.text === 'string') return part.text;
+          if (typeof part.content === 'string') return part.content;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  }
+  if (typeof content === 'object') {
+    if (typeof content.text === 'string') return content.text;
+    if (typeof content.content === 'string') return content.content;
+  }
+  return '';
+}
+
 function App() {
   const [status, setStatus] = useState('idle'); // idle | connecting | in-progress | complete
   const [error, setError] = useState('');
@@ -61,6 +196,13 @@ function App() {
   const [displayMessages, setDisplayMessages] = useState([]);
   const [isMicActive, setIsMicActive] = useState(false);
   const [displayMode, setDisplayMode] = useState('equalizer'); // equalizer | transcript
+  const [interviewList, setInterviewList] = useState([]);
+  const [selectedInterviewId, setSelectedInterviewId] = useState(null);
+  const [selectedInterview, setSelectedInterview] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
 
   const remoteAudioRef = useRef(null);
   const peerRef = useRef(null);
@@ -85,6 +227,76 @@ function App() {
     [personaOptions, selectedDifficulty]
   );
   const canStartInterview = status === 'idle' && selectedQuestionIds.length > 0;
+  const isViewingHistory = selectedInterviewId !== null && selectedInterview !== null;
+  const detailTitle = useMemo(() => getRecordTitle(selectedInterview), [selectedInterview]);
+  const detailTimestamp = useMemo(
+    () => formatHeaderTimestamp(selectedInterview?.createdAt),
+    [selectedInterview]
+  );
+  const detailEvaluation = selectedInterview?.evaluation ?? null;
+  const detailCoaching = useMemo(() => {
+    if (!detailEvaluation) return null;
+    const summaryValue = detailEvaluation.summary ?? detailEvaluation.rawSummary;
+    const strengthsValue = Array.isArray(detailEvaluation.strengths)
+      ? detailEvaluation.strengths
+      : [];
+    const improvementsValue = Array.isArray(detailEvaluation.improvements)
+      ? detailEvaluation.improvements
+      : [];
+
+    if (summaryValue || strengthsValue.length > 0 || improvementsValue.length > 0) {
+      return {
+        summary: summaryValue ?? '',
+        strengths: strengthsValue,
+        improvements: improvementsValue
+      };
+    }
+
+    if (typeof detailEvaluation.rawSummary === 'string') {
+      return parseCoachingSummary(detailEvaluation.rawSummary);
+    }
+
+    if (typeof detailEvaluation.text === 'string') {
+      return parseCoachingSummary(detailEvaluation.text);
+    }
+
+    return null;
+  }, [detailEvaluation]);
+  const detailTranscript = selectedInterview?.transcript ?? [];
+
+  const buildInterviewMetadata = useCallback(() => {
+    const questionSummaries = selectedQuestions.map(question => ({
+      id: question?.id,
+      prompt: question?.prompt,
+      description: question?.description ?? null
+    }));
+
+    return {
+      difficulty: selectedDifficulty,
+      persona: activePersona
+        ? { id: activePersona.id, label: activePersona.label, description: activePersona.description }
+        : null,
+      questionIds: selectedQuestionIds,
+      questions: questionSummaries,
+      evaluationFocus,
+      savedAt: new Date().toISOString()
+    };
+  }, [activePersona, evaluationFocus, selectedDifficulty, selectedQuestionIds, selectedQuestions]);
+
+  const saveInterviewRecord = useCallback(async payload => {
+    const response = await fetch(`${API_BASE_URL}/interview/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const message = await response.text().catch(() => '');
+      throw new Error(message || 'Failed to save interview');
+    }
+
+    return response.json();
+  }, []);
 
   // Shared AudioContext for visualizations
   const audioContextRef = useRef(null);
@@ -102,6 +314,66 @@ function App() {
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  const loadInterviewHistory = useCallback(async () => {
+    try {
+      setHistoryLoading(true);
+      setHistoryError('');
+      const response = await fetch(`${API_BASE_URL}/interview/history`);
+      if (!response.ok) {
+        throw new Error('Failed to load interview history');
+      }
+      const data = await response.json();
+      const interviews = Array.isArray(data.interviews) ? data.interviews : [];
+      setInterviewList(sortInterviewsByDate(interviews));
+    } catch (err) {
+      console.error(err);
+      setHistoryError('Unable to load interview history.');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInterviewHistory();
+  }, [loadInterviewHistory]);
+
+  const loadInterviewDetail = useCallback(async id => {
+    if (!id) {
+      setSelectedInterviewId(null);
+      setSelectedInterview(null);
+      setDetailError('');
+      setDetailLoading(false);
+      return;
+    }
+
+    try {
+      setDetailLoading(true);
+      setDetailError('');
+      const response = await fetch(`${API_BASE_URL}/interview/history/${id}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Not Found');
+        }
+        throw new Error('Failed to load interview');
+      }
+      const data = await response.json();
+      setSelectedInterviewId(id);
+      setSelectedInterview(data);
+    } catch (err) {
+      console.error(err);
+      if (err.message === 'Not Found') {
+        setDetailError('Interview not found. It may have been removed.');
+        setInterviewList(prev => sortInterviewsByDate(prev.filter(item => item.id !== id)));
+      } else {
+        setDetailError('Unable to load interview details.');
+      }
+      setSelectedInterviewId(null);
+      setSelectedInterview(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     async function loadConfiguration() {
@@ -134,11 +406,6 @@ function App() {
 
     loadConfiguration();
   }, []);
-
-  const handleQuestionSelect = event => {
-    const values = Array.from(event.target.selectedOptions).map(option => option.value);
-    setSelectedQuestionIds(values);
-  };
 
   const handleQuestionToggle = id => {
     setSelectedQuestionIds(prev =>
@@ -483,7 +750,39 @@ function App() {
       }
 
       const data = await response.json();
-      setSummary(data.summary ?? '');
+      const summaryText = data.summary ?? '';
+      setSummary(summaryText);
+
+      try {
+        const metadata = buildInterviewMetadata();
+        const parsedEvaluation = parseCoachingSummary(summaryText);
+        const evaluationPayload = parsedEvaluation
+          ? {
+              summary: parsedEvaluation.summary,
+              strengths: parsedEvaluation.strengths,
+              improvements: parsedEvaluation.improvements,
+              rawSummary: summaryText
+            }
+          : { rawSummary: summaryText };
+
+        const record = await saveInterviewRecord({
+          transcript: conversation,
+          evaluation: evaluationPayload,
+          metadata,
+          title: deriveSessionTitleFromQuestions(metadata?.questions ?? [])
+        });
+        loadInterviewHistory();
+        setInterviewList(prev => {
+          const next = sortInterviewsByDate([record, ...prev.filter(item => item.id !== record?.id)]);
+          return next;
+        });
+        setSelectedInterviewId(record?.id ?? null);
+        if (record?.id) {
+          loadInterviewDetail(record.id);
+        }
+      } catch (persistError) {
+        console.error('Failed to persist interview', persistError);
+      }
     } catch (err) {
       console.error(err);
       setSummary('Unable to generate summary right now.');
@@ -865,166 +1164,295 @@ function App() {
   }, []);
 
   return (
-    <div className="app-container">
-      <header className="hero">
-        <h1>AI Interview Assistant</h1>
-        <p className="tagline">Prepare for your next interview with AI assistance</p>
-      </header>
-
-      {error && <div className="error">{error}</div>}
-
-      <section className="redesign-grid">
-        <div className="config-card">
-          <h2>Select Interview Questions</h2>
-          <div className="question-checkboxes">
-            {questionOptions.map(option => (
-              <label key={option.id} className="question-row">
-                <input
-                  type="checkbox"
-                  checked={selectedQuestionIds.includes(option.id)}
-                  onChange={() => handleQuestionToggle(option.id)}
-                />
-                <span>{option.prompt}</span>
-              </label>
-            ))}
-          </div>
-          <p className="helper-text subtle">Selected: {selectedQuestionIds.length} / {questionOptions.length}</p>
-
-          <h2>Select Difficulty Level</h2>
-          <div className="pill-options">
-            {personaOptions.map(persona => (
-              <button
-                key={persona.id}
-                type="button"
-                className={`pill ${selectedDifficulty === persona.id ? 'active' : ''}`}
-                onClick={() => handleDifficultyChange(persona.id)}
-              >
-                {persona.label}
-              </button>
-            ))}
-          </div>
-
-          {status === 'idle' && (
-            <button className="primary full" onClick={startInterview} disabled={!canStartInterview}>
-              Start Interview
-            </button>
-          )}
-          {status === 'connecting' && (
-            <button className="primary full" disabled>Connecting…</button>
-          )}
-          {status === 'in-progress' && (
-            <button className="secondary full" onClick={resetInterview}>End Session</button>
-          )}
-          {status === 'complete' && (
-            <div className="action-row">
-              <button className="secondary" onClick={resetInterview}>Reset</button>
-              <button className="primary" onClick={startInterview}>Restart Interview</button>
-            </div>
-          )}
-
-          {status === 'idle' && selectedQuestionIds.length === 0 && (
-            <p className="warning-text">Please select at least one question to start the interview.</p>
-          )}
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <h1 className="sidebar-title">Interview Coach</h1>
+          <button
+            type="button"
+            className="sidebar-primary-action"
+            onClick={() => {
+              setSelectedInterviewId(null);
+              setSelectedInterview(null);
+              resetInterview();
+            }}
+          >
+            New Interview
+          </button>
         </div>
-
-        <div className="right-panel">
-          <div className="panel">
-            <div className="panel-header">
-              {status === 'in-progress' ? (
-                <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
-                  <span className="dot" />
-                  <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
-                </div>
-              ) : (
-                <div></div>
-              )}
-              <button
-                type="button"
-                className="toggle-button"
-                onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
-              >
-                Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
-              </button>
-            </div>
-
-            {displayMode === 'transcript' ? (
-              <div className={`transcript-view ${status === 'in-progress' ? 'active' : ''}`}>
-                {displayMessages.length === 0 ? (
-                  <span className="placeholder subtle">Transcript will appear here once the interview starts…</span>
-                ) : (
-                  <pre>
-                    {displayMessages
-                      .map(m => `${m.role === 'assistant' ? 'Interviewer' : 'You'}: ${m.text}`)
-                      .join('\n\n')}
-                    {status === 'in-progress' ? '▋' : ''}
-                  </pre>
-                )}
-              </div>
-            ) : (
-              <div className={`equalizer ${status === 'in-progress' ? 'active' : ''}`}>
-                {status !== 'in-progress' && (
-                  <div ref={remoteVizContainerRef} style={{ position: 'absolute', inset: 0 }}>
-                    <canvas
-                      ref={remoteVizCanvasRef}
-                      style={{ width: '100%', height: '100%', display: 'block', background: '#0b0f1a' }}
-                    />
-                  </div>
-                )}
-                {status === 'in-progress' && (
-                  <div ref={remoteVizContainerRef} style={{ position: 'absolute', inset: 0 }}>
-                    <canvas
-                      ref={remoteVizCanvasRef}
-                      style={{ width: '100%', height: '100%', display: 'block', background: '#0b0f1a' }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {summary && (
-        <section className="summary">
-          <h2>Coaching Advice</h2>
-          {coaching ? (
-            <>
-              {coaching.summary && (
-                <div className="summary-block">
-                  <h3>Summary of Overall Performance</h3>
-                  <p>{coaching.summary}</p>
-                </div>
-              )}
-              {coaching.strengths.length > 0 && (
-                <div className="summary-block">
-                  <h3>Strengths</h3>
-                  <ul>
-                    {coaching.strengths.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {coaching.improvements.length > 0 && (
-                <div className="summary-block">
-                  <h3>Improvements</h3>
-                  <ul>
-                    {coaching.improvements.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
+        <div className="sidebar-body">
+          {historyLoading ? (
+            <div className="sidebar-placeholder subtle">Loading history…</div>
+          ) : historyError ? (
+            <div className="sidebar-placeholder error">{historyError}</div>
+          ) : interviewList.length === 0 ? (
+            <div className="sidebar-placeholder subtle">No interviews yet. Start a new session to see it here.</div>
           ) : (
-            <pre>{summary}</pre>
+            <ul className="interview-list">
+              {interviewList.map(item => {
+                const isActive = item.id === selectedInterviewId;
+                const label = getListDisplayTitle(item);
+                const subtitle = formatSidebarTimestamp(item.createdAt);
+                const snippet = shortenSummary(item.evaluationSummary ?? '');
+                return (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      className={`interview-list-item ${isActive ? 'active' : ''}`}
+                      onClick={() => loadInterviewDetail(item.id)}
+                    >
+                      <span className="item-title">{label}</span>
+                      <span className="item-meta">{subtitle}</span>
+                      {snippet && <span className="item-snippet">{snippet}</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-        </section>
-      )}
+        </div>
+      </aside>
 
-      {/* Visualizer Playground removed */}
+      <main className="workspace">
+        <header className="workspace-header">
+          <div className="header-text">
+            <h2>{isViewingHistory ? detailTitle : 'New Interview'}</h2>
+            <p className="subtle">
+              {isViewingHistory
+                ? detailTimestamp || 'Saved session'
+                : 'Configure questions and start when ready'}
+            </p>
+          </div>
+          {isViewingHistory ? (
+            <button
+              type="button"
+              className="tone-button"
+              onClick={() => {
+                setSelectedInterviewId(null);
+                setSelectedInterview(null);
+                resetInterview();
+              }}
+            >
+              Return to live mode
+            </button>
+          ) : (
+            <div className="persona-chip">
+              {activePersona ? activePersona.label : formatDifficultyLabel(selectedDifficulty) || 'Medium'}
+            </div>
+          )}
+        </header>
 
-      <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only" />
+        {error && <div className="banner error">{error}</div>}
+        {detailError && isViewingHistory && <div className="banner error">{detailError}</div>}
+
+        {isViewingHistory ? (
+          <div className="history-view">
+            <section className="history-section">
+              <h3>Transcript</h3>
+              {detailLoading ? (
+                <div className="history-placeholder subtle">Loading transcript…</div>
+              ) : detailTranscript.length === 0 ? (
+                <div className="history-placeholder subtle">Transcript unavailable for this session.</div>
+              ) : (
+                <div className="history-transcript">
+                  {detailTranscript.map((entry, index) => {
+                    const role = entry.role || 'unknown';
+                    const label = role === 'assistant' ? 'Interviewer' : role === 'user' ? 'You' : role;
+                    const text = normaliseTranscriptEntryContent(entry.content ?? entry.text ?? entry.contentText);
+                    return (
+                      <div className="history-turn" key={entry.id || index}>
+                        <div className="turn-role">{label}</div>
+                        <div className="turn-text">{text || '—'}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className="history-section">
+              <h3>Evaluation</h3>
+              {detailLoading ? (
+                <div className="history-placeholder subtle">Loading evaluation…</div>
+              ) : detailCoaching ? (
+                <div className="summary">
+                  {detailCoaching.summary && (
+                    <div className="summary-block">
+                      <h4>Summary</h4>
+                      <p>{detailCoaching.summary}</p>
+                    </div>
+                  )}
+                  {detailCoaching.strengths.length > 0 && (
+                    <div className="summary-block">
+                      <h4>Strengths</h4>
+                      <ul>
+                        {detailCoaching.strengths.map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {detailCoaching.improvements.length > 0 && (
+                    <div className="summary-block">
+                      <h4>Improvements</h4>
+                      <ul>
+                        {detailCoaching.improvements.map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : summary ? (
+                <pre className="history-summary-text">{summary}</pre>
+              ) : (
+                <div className="history-placeholder subtle">Evaluation unavailable for this session.</div>
+              )}
+            </section>
+          </div>
+        ) : (
+          <div className="live-layout">
+            <section className="config-card">
+              <h3>Select Interview Questions</h3>
+              <div className="question-checkboxes">
+                {questionOptions.map(option => (
+                  <label key={option.id} className="question-row">
+                    <input
+                      type="checkbox"
+                      checked={selectedQuestionIds.includes(option.id)}
+                      onChange={() => handleQuestionToggle(option.id)}
+                    />
+                    <span>{option.prompt}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="helper-text subtle">Selected: {selectedQuestionIds.length} / {questionOptions.length}</p>
+
+              <h3>Select Difficulty Level</h3>
+              <div className="pill-options">
+                {personaOptions.map(persona => (
+                  <button
+                    key={persona.id}
+                    type="button"
+                    className={`pill ${selectedDifficulty === persona.id ? 'active' : ''}`}
+                    onClick={() => handleDifficultyChange(persona.id)}
+                  >
+                    {persona.label}
+                  </button>
+                ))}
+              </div>
+
+              {status === 'idle' && (
+                <button className="primary full" onClick={startInterview} disabled={!canStartInterview}>
+                  Start Interview
+                </button>
+              )}
+              {status === 'connecting' && (
+                <button className="primary full" disabled>Connecting…</button>
+              )}
+              {status === 'in-progress' && (
+                <button className="secondary full" onClick={resetInterview}>End Session</button>
+              )}
+              {status === 'complete' && (
+                <div className="action-row">
+                  <button className="secondary" onClick={resetInterview}>Reset</button>
+                  <button className="primary" onClick={startInterview}>Restart Interview</button>
+                </div>
+              )}
+
+              {status === 'idle' && selectedQuestionIds.length === 0 && (
+                <p className="warning-text">Please select at least one question to start the interview.</p>
+              )}
+            </section>
+
+            <section className="live-stage">
+              <div className="panel">
+                <div className="panel-header">
+                  {status === 'in-progress' ? (
+                    <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
+                      <span className="dot" />
+                      <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
+                    </div>
+                  ) : (
+                    <div></div>
+                  )}
+                  <button
+                    type="button"
+                    className="toggle-button"
+                    onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
+                  >
+                    Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
+                  </button>
+                </div>
+
+                {displayMode === 'transcript' ? (
+                  <div className={`transcript-view ${status === 'in-progress' ? 'active' : ''}`}>
+                    {displayMessages.length === 0 ? (
+                      <span className="placeholder subtle">Transcript will appear here once the interview starts…</span>
+                    ) : (
+                      <pre>
+                        {displayMessages
+                          .map(m => `${m.role === 'assistant' ? 'Interviewer' : 'You'}: ${m.text}`)
+                          .join('\n\n')}
+                        {status === 'in-progress' ? '▋' : ''}
+                      </pre>
+                    )}
+                  </div>
+                ) : (
+                  <div className={`equalizer ${status === 'in-progress' ? 'active' : ''}`}>
+                    <div ref={remoteVizContainerRef} style={{ position: 'absolute', inset: 0 }}>
+                      <canvas
+                        ref={remoteVizCanvasRef}
+                        style={{ width: '100%', height: '100%', display: 'block', background: '#0b0f1a' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {!isViewingHistory && summary && (
+          <section className="summary">
+            <h3>Coaching Advice</h3>
+            {coaching ? (
+              <>
+                {coaching.summary && (
+                  <div className="summary-block">
+                    <h4>Summary of Overall Performance</h4>
+                    <p>{coaching.summary}</p>
+                  </div>
+                )}
+                {coaching.strengths.length > 0 && (
+                  <div className="summary-block">
+                    <h4>Strengths</h4>
+                    <ul>
+                      {coaching.strengths.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {coaching.improvements.length > 0 && (
+                  <div className="summary-block">
+                    <h4>Improvements</h4>
+                    <ul>
+                      {coaching.improvements.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : (
+              <pre>{summary}</pre>
+            )}
+          </section>
+        )}
+
+        <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only" />
+      </main>
     </div>
   );
 }
