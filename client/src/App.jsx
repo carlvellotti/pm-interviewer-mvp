@@ -789,7 +789,21 @@ function App() {
     }
   };
 
-  const resetInterview = () => {
+  const resetInterview = (options = {}) => {
+    const { forceDiscard = false } = options;
+
+    const hasConversation = conversationRef.current && conversationRef.current.length > 0;
+    const alreadyRequested = summaryRequestedRef.current;
+
+    if (!forceDiscard && hasConversation && !alreadyRequested) {
+      summaryRequestedRef.current = true;
+      setStatus('complete');
+      setError('');
+      fetchSummary(conversationRef.current);
+      cleanupConnection();
+      return;
+    }
+
     cleanupConnection();
     setStatus('idle');
     setError('');
@@ -1174,7 +1188,7 @@ function App() {
             onClick={() => {
               setSelectedInterviewId(null);
               setSelectedInterview(null);
-              resetInterview();
+              resetInterview({ forceDiscard: true });
             }}
           >
             New Interview
@@ -1230,7 +1244,7 @@ function App() {
               onClick={() => {
                 setSelectedInterviewId(null);
                 setSelectedInterview(null);
-                resetInterview();
+                resetInterview({ forceDiscard: true });
               }}
             >
               Return to live mode
@@ -1351,11 +1365,11 @@ function App() {
                 <button className="primary full" disabled>Connecting…</button>
               )}
               {status === 'in-progress' && (
-                <button className="secondary full" onClick={resetInterview}>End Session</button>
+                <button className="secondary full" onClick={() => resetInterview()}>End Session</button>
               )}
               {status === 'complete' && (
                 <div className="action-row">
-                  <button className="secondary" onClick={resetInterview}>Reset</button>
+                  <button className="secondary" onClick={() => resetInterview({ forceDiscard: true })}>Reset</button>
                   <button className="primary" onClick={startInterview}>Restart Interview</button>
                 </div>
               )}

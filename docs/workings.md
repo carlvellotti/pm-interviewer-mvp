@@ -87,7 +87,7 @@ Entry: `client/src/App.jsx` (React + Vite)
 
 ### Event handling
 - Same as before: absorbs message/transcription events and renders conversation.
-- When the assistant emits `INTERVIEW_COMPLETE`, the app tears down WebRTC, calls `POST /interview/summary`, and now additionally persists the session via `/interview/save`.
+- When the assistant emits `INTERVIEW_COMPLETE`, or the user manually ends the session after some conversation, the app tears down WebRTC, calls `POST /interview/summary`, and persists the session via `/interview/save`.
 
 ### UI states & layout
 - Modes: `idle` → `connecting` → `in-progress` → `complete`

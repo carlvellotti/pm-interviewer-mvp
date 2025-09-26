@@ -40,7 +40,7 @@
 - **Access pattern**
   - App startup fetches `/interview/history` (summaries sorted by `created_at DESC`).
   - `/interview/history/:id` loads the full payload lazily when a list item is selected.
-  - After saving a new interview the client merges it into state and re-sorts locally.
+  - When a session ends (either naturally or via manual stop with existing conversation), the client requests the evaluation, saves the record, and merges it into state sorted by recency.
 
 ## UI & UX Overview
 - **Layout shell**
