@@ -18,6 +18,7 @@ import {
 } from './atoms/prepState.js';
 import { saveInterview, summarizeInterview, createRealtimeSession } from './services/api.js';
 import { useRealtimeInterview } from './hooks/useRealtimeInterview.js';
+import { useInterviewMessages } from './hooks/useInterviewMessages.js';
 import {
   buildInterviewerSystemPrompt,
   deriveSessionTitleFromQuestions,
@@ -58,7 +59,6 @@ function InterviewExperience() {
 
 
   const [summary, setSummary] = useState('');
-  const [displayMessages, setDisplayMessages] = useState([]);
   const [displayMode, setDisplayMode] = useState('equalizer'); // equalizer | transcript
   
   const [selectedInterviewId] = useAtom(selectedInterviewIdAtom);
@@ -80,10 +80,6 @@ function InterviewExperience() {
     cleanupConnection
   } = useRealtimeInterview();
   
-  const messageOrderRef = useRef([]);
-  const messageMapRef = useRef(new Map());
-  const conversationRef = useRef([]);
-  const summaryRequestedRef = useRef(false);
   const statusRef = useRef(status);
   const audioContextRef = useRef(null);
   const coaching = useMemo(() => parseCoachingSummary(summary), [summary]);
@@ -120,117 +116,6 @@ function InterviewExperience() {
     return null;
   }, [detailEvaluation]);
   const detailTranscript = selectedInterview?.transcript ?? [];
-
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
-
-  useEffect(() => {
-    if (prepMode === 'interview' && interviewSession && status === 'idle') {
-      const initInterview = async () => {
-        const session = interviewSession || await createRealtimeSession({});
-        await startInterview(session, interviewStack, handleDataChannelMessage);
-      };
-      initInterview();
-    }
-  }, [prepMode, interviewSession, interviewStack, status, startInterview]);
-
-  const commitMessages = useCallback(() => {
-    const ordered = messageOrderRef.current
-      .map(id => messageMapRef.current.get(id))
-      .filter(Boolean)
-      .map(entry => ({ id: entry.id, role: entry.role, text: entry.text.trim() }));
-
-    setDisplayMessages(ordered);
-    conversationRef.current = ordered.map(({ role, text }) => ({ role, content: text }));
-  }, []);
-
-  const upsertMessage = useCallback((itemId, role, textDelta, options = {}) => {
-    if (!itemId) return;
-    const current = messageMapRef.current.get(itemId) ?? { id: itemId, role, text: '' };
-    if (role && !current.role) {
-      current.role = role;
-    }
-    if (options.replace) {
-      current.text = textDelta ?? '';
-    } else {
-      current.text = `${current.text || ''}${textDelta ?? ''}`;
-    }
-
-    messageMapRef.current.set(itemId, current);
-    if (!messageOrderRef.current.includes(itemId)) {
-      messageOrderRef.current.push(itemId);
-    }
-
-    commitMessages();
-
-    if (
-      current.role === 'assistant' &&
-      current.text.includes('INTERVIEW_COMPLETE') &&
-      !summaryRequestedRef.current
-    ) {
-      summaryRequestedRef.current = true;
-      setStatus('complete');
-      cleanupConnection();
-      fetchSummary(conversationRef.current);
-    }
-  }, [commitMessages, cleanupConnection]);
-
-  const handleRealtimeEvent = useCallback(event => {
-    if (!event || typeof event !== 'object') return;
-
-    if (import.meta.env.DEV) {
-      console.debug('Realtime event', event.type, event);
-    }
-
-    switch (event.type) {
-      case 'conversation.item.created':
-      case 'conversation.item.added': {
-        const item = event.item;
-        if (!item || item.type !== 'message') return;
-        const text = extractTextFromContent(item.content);
-        upsertMessage(item.id, item.role, text, { replace: true });
-        break;
-      }
-      case 'conversation.item.input_audio_transcription.delta':
-        upsertMessage(event.item_id, 'user', normaliseDelta(event.delta));
-        break;
-      case 'conversation.item.input_audio_transcription.completed':
-      case 'conversation.item.input_audio_transcription.done':
-      case 'conversation.item.input_audio_transcription.segment':
-        if (typeof event.text === 'string') {
-          upsertMessage(event.item_id, 'user', event.text, { replace: true });
-        }
-        break;
-      case 'response.output_text.delta':
-        upsertMessage(event.item_id, 'assistant', normaliseDelta(event.delta));
-        break;
-      case 'response.output_text.done':
-        if (typeof event.text === 'string') {
-          upsertMessage(event.item_id, 'assistant', event.text, { replace: true });
-        }
-        break;
-      case 'response.output_audio_transcript.delta':
-        upsertMessage(event.item_id, 'assistant', normaliseDelta(event.delta));
-        break;
-      case 'response.output_audio_transcript.done':
-        if (typeof event.transcript === 'string') {
-          upsertMessage(event.item_id, 'assistant', event.transcript, { replace: true });
-        }
-        break;
-      default:
-        break;
-    }
-  }, [upsertMessage]);
-
-  const handleDataChannelMessage = useCallback(event => {
-    try {
-      const payload = JSON.parse(event.data);
-      handleRealtimeEvent(payload);
-    } catch (err) {
-      console.debug('Non-JSON realtime payload', event.data);
-    }
-  }, [handleRealtimeEvent]);
 
   const fetchSummary = useCallback(async conversation => {
     if (!conversation || conversation.length === 0) {
@@ -288,14 +173,39 @@ function InterviewExperience() {
     }
   }, [evaluationFocus, jdSummary, reviewSettings.difficulty, reviewSettings.persona, resumeState, selectedQuestionIds, selectedQuestions, setInterviewList]);
 
+  const {
+    displayMessages,
+    conversationRef,
+    handleDataChannelMessage,
+    resetMessages
+  } = useInterviewMessages({
+    onComplete: (conversation) => {
+      setStatus('complete');
+      cleanupConnection();
+      fetchSummary(conversation);
+    }
+  });
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    if (prepMode === 'interview' && interviewSession && status === 'idle') {
+      const initInterview = async () => {
+        const session = interviewSession || await createRealtimeSession({});
+        await startInterview(session, interviewStack, handleDataChannelMessage);
+      };
+      initInterview();
+    }
+  }, [prepMode, interviewSession, interviewStack, status, startInterview, handleDataChannelMessage]);
+
   const resetInterview = useCallback((options = {}) => {
     const { forceDiscard = false } = options;
 
     const hasConversation = conversationRef.current && conversationRef.current.length > 0;
-    const alreadyRequested = summaryRequestedRef.current;
 
-    if (!forceDiscard && hasConversation && !alreadyRequested) {
-      summaryRequestedRef.current = true;
+    if (!forceDiscard && hasConversation) {
       setStatus('complete');
       setError('');
       fetchSummary(conversationRef.current);
@@ -307,12 +217,8 @@ function InterviewExperience() {
     setStatus('idle');
     setError('');
     setSummary('');
-    setDisplayMessages([]);
-    messageOrderRef.current = [];
-    messageMapRef.current = new Map();
-    conversationRef.current = [];
-    summaryRequestedRef.current = false;
-  }, [cleanupConnection, fetchSummary]);
+    resetMessages();
+  }, [cleanupConnection, fetchSummary, resetMessages]);
 
   return (
     <>
