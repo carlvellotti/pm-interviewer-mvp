@@ -7,7 +7,10 @@ import { randomUUID } from 'crypto';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const dataDir = path.join(__dirname, '..', 'data');
+// Use /tmp on Vercel (ephemeral), otherwise use persistent local storage
+const dataDir = process.env.VERCEL 
+  ? '/tmp' 
+  : path.join(__dirname, '..', 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 
 const databasePath = path.join(dataDir, 'interviews.db');

@@ -5,14 +5,12 @@ const API_BASE_URL = (() => {
   }
 
   if (typeof window !== 'undefined') {
-    const { hostname, origin } = window.location;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:4000';
-    }
+    const { origin } = window.location;
+    // Always use same-origin /api path (works for both vercel dev and production)
     return `${origin.replace(/\/$/, '')}/api`;
   }
 
-  return 'http://localhost:4000';
+  return '/api';
 })();
 
 async function handleResponse(response) {
@@ -42,13 +40,13 @@ export async function fetchConfiguration() {
 }
 
 export async function fetchCustomCategories() {
-  const response = await fetch(`${API_BASE_URL}/interview/preferences/categories`);
+  const response = await fetch(`${API_BASE_URL}/categories`);
   const { categories = [] } = await handleResponse(response);
   return categories;
 }
 
 export async function createCustomCategory(payload) {
-  const response = await fetch(`${API_BASE_URL}/interview/preferences/categories`, {
+  const response = await fetch(`${API_BASE_URL}/categories`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -57,7 +55,7 @@ export async function createCustomCategory(payload) {
 }
 
 export async function updateCustomCategory(id, payload) {
-  const response = await fetch(`${API_BASE_URL}/interview/preferences/categories/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/categories/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -66,7 +64,7 @@ export async function updateCustomCategory(id, payload) {
 }
 
 export async function deleteCustomCategory(id) {
-  const response = await fetch(`${API_BASE_URL}/interview/preferences/categories/${id}`, {
+  const response = await fetch(`${API_BASE_URL}/categories/${id}`, {
     method: 'DELETE'
   });
   if (!response.ok && response.status !== 204) {

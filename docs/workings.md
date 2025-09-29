@@ -14,20 +14,24 @@ This document summarizes how the two projects in this workspace are structured a
 
 ## Development Workflow Overview
 
-Development still leans on `vercel dev` for a production-like experience, but the canonical local backend now lives in the Express app (`server/`) so we can persist interviews to SQLite. Recommended setup:
+**Current Deployment (Sept 2025):** Individual serverless functions in `api/` directory (see `docs/vercel-deployment-patterns.md` for the full story).
 
 - **Architecture**
   - `client/`: React SPA with a sidebar listing saved interviews and a main workspace for the live or historical session.
-  - `server/`: Express 5 + `better-sqlite3` for REST endpoints, local persistence, and OpenAI calls.
-  - `api/`: Vercel serverless functions for the hosted deployment; Express feature-parity lets us run everything locally without Vercel.
-- **Local commands**
-  1. `cd server && npm start` – starts Express on `http://localhost:4000`, auto-creates `data/interviews.db` (ignored by git).
-  2. In another terminal either run `vercel dev` from repo root *or* `cd client && npm run dev`. In both cases the client ultimately talks to the Express server (see rewrites below).
-- **`vercel dev` rewrites**: `vercel.json` maps `/api/:path*` to `http://localhost:4000/:path*`, so the browser can call `/api/...` during local development and hit Express without CORS errors.
+  - `server/`: Express 5 + `better-sqlite3` for **local development only** (not deployed to Vercel).
+  - `api/`: Individual serverless functions that handle all production API requests on Vercel.
+- **Local development options**
+  1. **Recommended:** `vercel dev` from repo root – simulates production environment, uses serverless functions in `api/`
+  2. **Alternative:** `cd server && npm start` (Express on port 4000) + `cd client && npm run dev` – faster iteration but different from production
+- **Note:** The Express server (`server/index.js`) is NOT deployed to Vercel. It's purely for local development convenience. Production uses the individual functions in `api/`.
 
 ---
 
-## Backend (interview-bot-test/server)
+## Backend
+
+### Local Development Server (interview-bot-test/server)
+
+**Note:** This Express server is for **local development only** and is NOT deployed to Vercel. Production uses individual serverless functions in `api/`.
 
 Entry: `server/index.js` (Express 5, CORS, dotenv, `openai` SDK, SQLite persistence)
 
@@ -165,11 +169,24 @@ If you use the Vite dev server, set `VITE_API_BASE_URL=http://localhost:4000` in
 
 ## Deployment (Vercel)
 
-- `vercel.json` now includes a rewrite: `/api/:path*` → `http://localhost:4000/:path*` for local development parity.
-- Production deploys still rely on the `api/` serverless functions; ensure they stay in sync with Express endpoints.
-- Environment variables:
-  - Server: `OPENAI_API_KEY` (required), optional overrides for models/voice.
-  - Frontend: set `VITE_API_BASE_URL=/api` in production so the SPA calls Vercel APIs.
+**Architecture:** Individual serverless functions (see `docs/vercel-deployment-patterns.md` for detailed explanation and alternatives).
+
+- **API Structure:** Each route is a separate file in `api/` directory
+  - `api/health.js` → `/api/health`
+  - `api/categories/index.js` → `/api/categories`
+  - `api/categories/[id].js` → `/api/categories/:id` (dynamic route)
+  - `api/interview/history/index.js` → `/api/interview/history`
+  - etc.
+- **Database:** SQLite stored in `/tmp` (ephemeral, cleared periodically)
+  - Acceptable for demo/MVP use case
+  - Upgrade to Vercel Postgres/KV for persistence if needed
+- **Environment variables:**
+  - `OPENAI_API_KEY` (required)
+  - Optional: `REALTIME_MODEL`, `REALTIME_VOICE`, `REALTIME_TRANSCRIBE_MODEL`
+- **Build configuration:** See `vercel.json`
+  - Installs root + client dependencies
+  - Builds React app to `client/dist`
+  - Auto-detects and deploys `api/` functions
 
 ---
 
@@ -200,6 +217,7 @@ Folder: `91363a6b-c3c6-44f9-8cf7-3dd5a2323680/`
 
 ### Documentation
 - Architecture refactor spec: `docs/specs/app-refactor.md`
+- Vercel deployment patterns: `docs/vercel-deployment-patterns.md`
 - This file: `docs/workings.md`
 - Deployment: `vercel.json`, `DEPLOYMENT.md`
 - API reference: `Realtime API.md`

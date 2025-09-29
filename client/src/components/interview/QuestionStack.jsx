@@ -14,7 +14,7 @@ export default function QuestionStack({ questions }) {
           <ul className="question-stack-list">
             {questions.map(question => (
               <li key={question.id} className="question-stack-item">
-                <strong>{question.prompt}</strong>
+                <strong>{question.text || question.prompt}</strong>
               </li>
             ))}
           </ul>
