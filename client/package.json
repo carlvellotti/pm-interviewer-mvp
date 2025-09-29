@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@radix-ui/react-tabs": "^1.1.13",
+    "jotai": "^2.15.0",
+    "jotai-devtools": "^0.13.0",
     "node-pre-gyp": "^0.17.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
