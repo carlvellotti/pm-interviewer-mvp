@@ -39,9 +39,8 @@ import {
 } from './utils/formatters.js';
 import PrepWizard from './components/prep/PrepWizard.jsx';
 import Sidebar from './components/Sidebar.jsx';
-import QuestionStack from './components/interview/QuestionStack.jsx';
-import SessionDetails from './components/interview/SessionDetails.jsx';
-import AudioVisualizer from './components/interview/AudioVisualizer.jsx';
+import InterviewView from './components/interview/InterviewView.jsx';
+import HistoryView from './components/interview/HistoryView.jsx';
 import './redesign.css';
 
 function InterviewExperience() {
@@ -220,194 +219,26 @@ function InterviewExperience() {
     resetMessages();
   }, [cleanupConnection, fetchSummary, resetMessages]);
 
+  if (isViewingHistory) {
+    return (
+      <HistoryView
+        onReturnToLive={() => resetInterview({ forceDiscard: true })}
+        summary={summary}
+      />
+    );
+  }
+
   return (
-    <>
-      <header className="workspace-header">
-        <div className="header-text">
-          <h2>{isViewingHistory ? detailTitle : 'New Interview'}</h2>
-          <p className="subtle">
-            {isViewingHistory
-              ? detailTimestamp || 'Saved session'
-              : 'Configure questions and start when ready'}
-          </p>
-        </div>
-        {isViewingHistory ? (
-          <button
-            type="button"
-            className="tone-button"
-            onClick={() => resetInterview({ forceDiscard: true })}
-          >
-            Return to live mode
-          </button>
-        ) : (
-          <div className="persona-chip">
-            {reviewSettings.persona ? reviewSettings.persona : 'Medium'}
-          </div>
-        )}
-      </header>
-
-      {error && <div className="banner error">{error}</div>}
-      {detailError && isViewingHistory && <div className="banner error">{detailError}</div>}
-
-        {isViewingHistory ? (
-          <div className="history-view">
-            <section className="history-section">
-              <h3>Transcript</h3>
-              {detailLoading ? (
-                <div className="history-placeholder subtle">Loading transcript…</div>
-              ) : detailTranscript.length === 0 ? (
-                <div className="history-placeholder subtle">Transcript unavailable for this session.</div>
-              ) : (
-                <div className="history-transcript">
-                  {detailTranscript.map((entry, index) => {
-                    const role = entry.role || 'unknown';
-                    const label = role === 'assistant' ? 'Interviewer' : role === 'user' ? 'You' : role;
-                    const text = normaliseTranscriptEntryContent(entry.content ?? entry.text ?? entry.contentText);
-                    return (
-                      <div className="history-turn" key={entry.id || index}>
-                        <div className="turn-role">{label}</div>
-                        <div className="turn-text">{text || '—'}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            <section className="history-section">
-              <h3>Evaluation</h3>
-              {detailLoading ? (
-                <div className="history-placeholder subtle">Loading evaluation…</div>
-              ) : detailCoaching ? (
-                <div className="summary">
-                  {detailCoaching.summary && (
-                    <div className="summary-block">
-                      <h4>Summary</h4>
-                      <p>{detailCoaching.summary}</p>
-                    </div>
-                  )}
-                  {detailCoaching.strengths.length > 0 && (
-                    <div className="summary-block">
-                      <h4>Strengths</h4>
-                      <ul>
-                        {detailCoaching.strengths.map((item, index) => (
-                          <li key={index}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {detailCoaching.improvements.length > 0 && (
-                    <div className="summary-block">
-                      <h4>Improvements</h4>
-                      <ul>
-                        {detailCoaching.improvements.map((item, index) => (
-                          <li key={index}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              ) : summary ? (
-                <pre className="history-summary-text">{summary}</pre>
-              ) : (
-                <div className="history-placeholder subtle">Evaluation unavailable for this session.</div>
-              )}
-            </section>
-          </div>
-        ) : (
-          <div className="live-layout">
-            <section className="live-stage">
-              <div className="panel">
-                <div className="panel-header">
-                  {status === 'in-progress' ? (
-                    <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
-                      <span className="dot" />
-                      <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
-                    </div>
-                  ) : (
-                    <div></div>
-                  )}
-                  <button
-                    type="button"
-                    className="toggle-button"
-                    onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
-                  >
-                    Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
-                  </button>
-                </div>
-
-                {displayMode === 'transcript' ? (
-                  <div className={`transcript-view ${status === 'in-progress' ? 'active' : ''}`}>
-                    {displayMessages.length === 0 ? (
-                      <span className="placeholder subtle">Transcript will appear here once the interview starts…</span>
-                    ) : (
-                      <pre>
-                        {displayMessages
-                          .map(m => `${m.role === 'assistant' ? 'Interviewer' : 'You'}: ${m.text}`)
-                          .join('\n\n')}
-                        {status === 'in-progress' ? '▋' : ''}
-                      </pre>
-                    )}
-                  </div>
-                ) : (
-                  <AudioVisualizer remoteStream={remoteStream} status={status} />
-                )}
-              </div>
-            </section>
-
-            <aside className="live-sidebar">
-              <QuestionStack questions={interviewStack} />
-              <SessionDetails
-                persona={interviewPersona}
-                personaFallback={reviewSettings.persona}
-                difficulty={reviewSettings.difficulty}
-                resumeFilename={interviewResume?.filename || resumeState.filename}
-                jdSummary={jdSummary}
-              />
-            </aside>
-          </div>
-        )}
-
-        {!isViewingHistory && summary && (
-          <section className="summary">
-            <h3>Coaching Advice</h3>
-            {coaching ? (
-              <>
-                {coaching.summary && (
-                  <div className="summary-block">
-                    <h4>Summary of Overall Performance</h4>
-                    <p>{coaching.summary}</p>
-                  </div>
-                )}
-                {coaching.strengths.length > 0 && (
-                  <div className="summary-block">
-                    <h4>Strengths</h4>
-                    <ul>
-                      {coaching.strengths.map((item, index) => (
-                        <li key={index}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {coaching.improvements.length > 0 && (
-                  <div className="summary-block">
-                    <h4>Improvements</h4>
-                    <ul>
-                      {coaching.improvements.map((item, index) => (
-                        <li key={index}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            ) : (
-              <pre>{summary}</pre>
-            )}
-          </section>
-        )}
-
-      <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only" />
-    </>
+    <InterviewView
+      status={status}
+      error={error}
+      isMicActive={isMicActive}
+      remoteAudioRef={remoteAudioRef}
+      remoteStream={remoteStream}
+      displayMessages={displayMessages}
+      summary={summary}
+      onReset={() => resetInterview({ forceDiscard: true })}
+    />
   );
 }
 
