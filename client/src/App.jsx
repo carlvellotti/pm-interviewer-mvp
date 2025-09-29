@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
 import {
   prepModeAtom,
   interviewSessionAtom,
   interviewQuestionStackAtom,
-  interviewPersonaAtom,
-  interviewResumeAtom,
   selectedQuestionsAtom,
   selectedQuestionIdsAtom,
   evaluationFocusAtom,
@@ -20,23 +18,10 @@ import { saveInterview, summarizeInterview, createRealtimeSession } from './serv
 import { useRealtimeInterview } from './hooks/useRealtimeInterview.js';
 import { useInterviewMessages } from './hooks/useInterviewMessages.js';
 import {
-  buildInterviewerSystemPrompt,
   deriveSessionTitleFromQuestions,
-  extractTextFromContent,
-  getListDisplayTitle,
-  getRecordTitle,
-  normaliseDelta,
-  normaliseTranscriptEntryContent,
   parseCoachingSummary,
   sortInterviewsByDate
 } from './utils/interviewHelpers.js';
-import {
-  formatDetailTimestamp,
-  formatHeaderTimestamp,
-  formatLabel,
-  formatSidebarTimestamp,
-  shortenSummary
-} from './utils/formatters.js';
 import PrepWizard from './components/prep/PrepWizard.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import InterviewView from './components/interview/InterviewView.jsx';
@@ -44,11 +29,9 @@ import HistoryView from './components/interview/HistoryView.jsx';
 import './redesign.css';
 
 function InterviewExperience() {
-  const [prepMode, setPrepMode] = useAtom(prepModeAtom);
-  const [interviewSession, setInterviewSession] = useAtom(interviewSessionAtom);
-  const [interviewStack, setInterviewStack] = useAtom(interviewQuestionStackAtom);
-  const [interviewPersona, setInterviewPersona] = useAtom(interviewPersonaAtom);
-  const interviewResume = useAtomValue(interviewResumeAtom);
+  const prepMode = useAtomValue(prepModeAtom);
+  const interviewSession = useAtomValue(interviewSessionAtom);
+  const interviewStack = useAtomValue(interviewQuestionStackAtom);
   const selectedQuestions = useAtomValue(selectedQuestionsAtom);
   const selectedQuestionIds = useAtomValue(selectedQuestionIdsAtom);
   const evaluationFocus = useAtomValue(evaluationFocusAtom);
@@ -58,15 +41,10 @@ function InterviewExperience() {
 
 
   const [summary, setSummary] = useState('');
-  const [displayMode, setDisplayMode] = useState('equalizer'); // equalizer | transcript
   
-  const [selectedInterviewId] = useAtom(selectedInterviewIdAtom);
-  const [selectedInterview] = useAtom(selectedInterviewAtom);
+  const selectedInterviewId = useAtomValue(selectedInterviewIdAtom);
+  const selectedInterview = useAtomValue(selectedInterviewAtom);
   const [interviewList, setInterviewList] = useAtom(interviewListAtom);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState('');
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState('');
 
   const {
     status,
@@ -79,42 +57,7 @@ function InterviewExperience() {
     cleanupConnection
   } = useRealtimeInterview();
   
-  const statusRef = useRef(status);
-  const audioContextRef = useRef(null);
-  const coaching = useMemo(() => parseCoachingSummary(summary), [summary]);
   const isViewingHistory = prepMode === 'history' && selectedInterviewId !== null && selectedInterview !== null;
-  const detailTitle = useMemo(() => getRecordTitle(selectedInterview), [selectedInterview]);
-  const detailTimestamp = useMemo(() => formatHeaderTimestamp(selectedInterview?.createdAt), [selectedInterview]);
-  const detailEvaluation = selectedInterview?.evaluation ?? null;
-  const detailCoaching = useMemo(() => {
-    if (!detailEvaluation) return null;
-    const summaryValue = detailEvaluation.summary ?? detailEvaluation.rawSummary;
-    const strengthsValue = Array.isArray(detailEvaluation.strengths)
-      ? detailEvaluation.strengths
-      : [];
-    const improvementsValue = Array.isArray(detailEvaluation.improvements)
-      ? detailEvaluation.improvements
-      : [];
-
-    if (summaryValue || strengthsValue.length > 0 || improvementsValue.length > 0) {
-      return {
-        summary: summaryValue ?? '',
-        strengths: strengthsValue,
-        improvements: improvementsValue
-      };
-    }
-
-    if (typeof detailEvaluation.rawSummary === 'string') {
-      return parseCoachingSummary(detailEvaluation.rawSummary);
-    }
-
-    if (typeof detailEvaluation.text === 'string') {
-      return parseCoachingSummary(detailEvaluation.text);
-    }
-
-    return null;
-  }, [detailEvaluation]);
-  const detailTranscript = selectedInterview?.transcript ?? [];
 
   const fetchSummary = useCallback(async conversation => {
     if (!conversation || conversation.length === 0) {
@@ -179,15 +122,10 @@ function InterviewExperience() {
     resetMessages
   } = useInterviewMessages({
     onComplete: (conversation) => {
-      setStatus('complete');
       cleanupConnection();
       fetchSummary(conversation);
     }
   });
-
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
 
   useEffect(() => {
     if (prepMode === 'interview' && interviewSession && status === 'idle') {
@@ -205,16 +143,12 @@ function InterviewExperience() {
     const hasConversation = conversationRef.current && conversationRef.current.length > 0;
 
     if (!forceDiscard && hasConversation) {
-      setStatus('complete');
-      setError('');
       fetchSummary(conversationRef.current);
       cleanupConnection();
       return;
     }
 
     cleanupConnection();
-    setStatus('idle');
-    setError('');
     setSummary('');
     resetMessages();
   }, [cleanupConnection, fetchSummary, resetMessages]);
