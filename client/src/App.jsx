@@ -37,6 +37,8 @@ import {
 } from './utils/formatters.js';
 import PrepWizard from './components/prep/PrepWizard.jsx';
 import Sidebar from './components/Sidebar.jsx';
+import QuestionStack from './components/interview/QuestionStack.jsx';
+import SessionDetails from './components/interview/SessionDetails.jsx';
 import './redesign.css';
 
 function InterviewExperience() {
@@ -491,7 +493,7 @@ function InterviewExperience() {
       console.error(err);
       setSummary('Unable to generate summary right now.');
     }
-  }, [evaluationFocus, jdSummary, loadInterviewDetail, loadInterviewHistory, reviewSettings.difficulty, reviewSettings.persona, resumeState, selectedQuestionIds, selectedQuestions]);
+  }, [evaluationFocus, jdSummary, reviewSettings.difficulty, reviewSettings.persona, resumeState, selectedQuestionIds, selectedQuestions, setInterviewList]);
 
   const resetInterview = useCallback((options = {}) => {
     const { forceDiscard = false } = options;
@@ -1024,53 +1026,14 @@ function InterviewExperience() {
             </section>
 
             <aside className="live-sidebar">
-              <section className="card">
-                <div className="card-header">
-                  <h3>Question Stack</h3>
-                  <p className="subtle">Reference while you interview.</p>
-                </div>
-                <div className="card-body question-stack">
-                  {interviewStack.length === 0 ? (
-                    <div className="empty-state subtle">Question stack unavailable.</div>
-                  ) : (
-                    <ul className="question-stack-list">
-                      {interviewStack.map(question => (
-                        <li key={question.id} className="question-stack-item">
-                          <strong>{question.prompt}</strong>
-                          <div className="question-meta">
-                            {question.categoryId && <span className="tag category">{question.categoryId}</span>}
-                            {question.source && <span className="tag source">{question.source}</span>}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </section>
-
-              <section className="card">
-                <div className="card-header">
-                  <h3>Session Details</h3>
-                </div>
-                <div className="card-body summary-card">
-                  <div>
-                    <span className="label">Persona</span>
-                    <strong>{interviewPersona?.label || formatLabel(reviewSettings.persona)}</strong>
-                  </div>
-                  <div>
-                    <span className="label">Difficulty</span>
-                    <strong>{formatLabel(reviewSettings.difficulty)}</strong>
-                  </div>
-                  <div>
-                    <span className="label">Resume</span>
-                    <strong>{interviewResume?.filename || resumeState.filename || 'Not attached'}</strong>
-                  </div>
-                  <div>
-                    <span className="label">JD summary</span>
-                    <strong>{jdSummary ? 'Included' : 'Not provided'}</strong>
-                  </div>
-                </div>
-              </section>
+              <QuestionStack questions={interviewStack} />
+              <SessionDetails
+                persona={interviewPersona}
+                personaFallback={reviewSettings.persona}
+                difficulty={reviewSettings.difficulty}
+                resumeFilename={interviewResume?.filename || resumeState.filename}
+                jdSummary={jdSummary}
+              />
             </aside>
           </div>
         )}
