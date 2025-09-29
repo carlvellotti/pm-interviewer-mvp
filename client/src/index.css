@@ -13,10 +13,10 @@
 }
 
 body {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: #0f172a;
+  background: #0a1022;
+  color: #ecf2ff;
 }
 
 #root {
@@ -25,4 +25,285 @@ body {
 
 a {
   color: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  background: radial-gradient(circle at top, rgba(15, 23, 43, 1) 0%, rgba(8, 12, 26, 1) 55%, rgba(6, 9, 21, 1) 100%);
+  color: #ecf2ff;
+}
+
+.prep-wizard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: linear-gradient(180deg, rgba(9, 13, 27, 0.98) 0%, rgba(12, 18, 36, 0.95) 50%, rgba(9, 13, 27, 0.98) 100%);
+  font-family: inherit;
+}
+
+.prep-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 2.25rem 2.5rem 1.75rem;
+  border-bottom: 1px solid rgba(129, 140, 248, 0.18);
+  gap: 1.75rem;
+  background: rgba(14, 20, 40, 0.65);
+  box-shadow: 0 16px 38px rgba(5, 9, 23, 0.55);
+}
+.prep-header h2 {
+  margin: 0 0 0.4rem 0;
+  font-size: 2rem;
+  letter-spacing: 0.01em;
+}
+.prep-header .subtle {
+  margin: 0;
+  color: rgba(208, 220, 255, 0.74);
+  font-weight: 500;
+}
+
+.persona-settings {
+  display: flex;
+  gap: 1.1rem;
+}
+.persona-settings label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(210, 222, 255, 0.82);
+  gap: 0.45rem;
+}
+.persona-settings select {
+  background: rgba(12, 19, 43, 0.82);
+  border: 1px solid rgba(129, 140, 248, 0.55);
+  color: #eef3ff;
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.95rem;
+  min-width: 9.5rem;
+  appearance: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.prep-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 2rem;
+  padding: 1.75rem 2.5rem 2.5rem;
+  flex: 1;
+}
+.prep-tabs {
+  background: rgba(13, 19, 39, 0.72);
+  border: 1px solid rgba(129, 140, 248, 0.24);
+  border-radius: 1.2rem;
+  box-shadow: 0 26px 48px rgba(6, 10, 25, 0.55);
+  overflow: hidden;
+}
+.TabsList {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: rgba(14, 20, 43, 0.88);
+}
+.TabsTrigger {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(210, 222, 255, 0.62);
+  padding: 1rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, transform 0.15s ease;
+}
+.TabsTrigger[data-state='active'] {
+  color: #eef3ff;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.55) 0%, rgba(129, 140, 248, 0.55) 100%);
+  box-shadow: inset 0 -2px 0 rgba(219, 234, 254, 0.4);
+}
+.TabsTrigger:hover {
+  transform: translateY(-1px);
+}
+.TabsContent {
+  padding: 1.75rem 2rem 2rem;
+}
+.categories-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.card {
+  background: rgba(12, 19, 43, 0.76);
+  border: 1px solid rgba(129, 140, 248, 0.24);
+  border-radius: 1rem;
+  padding: 1.6rem;
+  box-shadow: 0 22px 42px rgba(7, 12, 27, 0.55);
+}
+.card-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.card-header .subtle {
+  margin: 0.35rem 0 0;
+  color: rgba(207, 219, 255, 0.58);
+}
+.question-item,
+.question-item.compact {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(129, 140, 248, 0.18);
+  background: rgba(16, 23, 46, 0.74);
+  transition: border 0.2s ease, background 0.2s ease, transform 0.15s ease;
+}
+.question-item:hover {
+  border-color: rgba(129, 140, 248, 0.4);
+  transform: translateY(-1px);
+}
+.question-item.selected {
+  border-color: rgba(129, 140, 248, 0.6);
+  background: rgba(99, 102, 241, 0.24);
+}
+.question-item input[type='checkbox'] {
+  margin-top: 0.15rem;
+  width: 18px;
+  height: 18px;
+  accent-color: #8b5cf6;
+}
+.question-item strong {
+  display: block;
+  font-size: 1.05rem;
+  color: #eef3ff;
+}
+.question-item p.subtle {
+  margin: 0.35rem 0 0;
+  color: rgba(207, 219, 255, 0.68);
+  font-size: 0.9rem;
+}
+.prep-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.summary-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.summary-card .label {
+  display: block;
+  color: rgba(207, 219, 255, 0.6);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.25rem;
+}
+.summary-card strong {
+  font-size: 1.05rem;
+  color: #eef3ff;
+}
+.prep-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2.5rem 2rem;
+  border-top: 1px solid rgba(129, 140, 248, 0.18);
+  background: rgba(14, 20, 41, 0.78);
+}
+.prep-footer .summary {
+  display: flex;
+  gap: 1.75rem;
+  align-items: center;
+}
+.prep-footer .summary .label {
+  display: block;
+  color: rgba(207, 219, 255, 0.58);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.prep-footer .summary strong {
+  font-size: 1.25rem;
+  color: #eef3ff;
+}
+.prep-footer .actions {
+  display: flex;
+  gap: 0.9rem;
+}
+.prep-footer button.primary,
+.prep-footer button.secondary,
+.tone-button,
+.card-footer button,
+.actions .primary,
+.actions .secondary,
+.card .primary,
+.card .secondary,
+.card .tone-button {
+  appearance: none;
+  border: none;
+  border-radius: 0.65rem;
+  padding: 0.7rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.22s ease, opacity 0.2s ease;
+}
+.prep-footer button.primary,
+.actions .primary,
+.card .primary {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(99, 102, 241, 0.4);
+}
+.prep-footer button.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.prep-footer button.secondary,
+.actions .secondary,
+.card .secondary {
+  background: transparent;
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  color: rgba(222, 226, 255, 0.85);
+}
+.prep-footer .actions button:hover,
+.card-footer button:hover,
+.tone-button:hover {
+  transform: translateY(-1px);
+}
+
+.textarea-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.1rem;
+}
+.textarea-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(214, 226, 255, 0.78);
+}
+.jd-textarea {
+  resize: vertical;
+  min-height: 160px;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  background: rgba(8, 12, 26, 0.9);
+  color: #eef3ff;
+  padding: 1rem 1.1rem;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.jd-textarea:focus {
+  border-color: rgba(129, 140, 248, 0.6);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
 }

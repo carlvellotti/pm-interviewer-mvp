@@ -1,22 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAtom, useAtomValue } from 'jotai';
+import {
+  prepModeAtom,
+  interviewSessionAtom,
+  interviewQuestionStackAtom,
+  interviewPersonaAtom,
+  interviewResumeAtom,
+  selectedQuestionsAtom,
+  selectedQuestionIdsAtom,
+  evaluationFocusAtom,
+  reviewSettingsAtom,
+  resumeUploadAtom,
+  jdSummaryAtom
+} from './atoms/prepState.js';
+import { fetchInterviewHistory, fetchInterviewDetail, saveInterview, summarizeInterview, createRealtimeSession } from './services/api.js';
+import PrepWizard from './components/prep/PrepWizard.jsx';
 import './redesign.css';
-
-const API_BASE_URL = (() => {
-  const configured = import.meta.env.VITE_API_BASE_URL;
-  if (configured && typeof configured === 'string' && configured.trim().length > 0) {
-    return configured.replace(/\/$/, '');
-  }
-
-  if (typeof window !== 'undefined') {
-    const { hostname, origin } = window.location;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:4000';
-    }
-    return `${origin.replace(/\/$/, '')}/api`;
-  }
-
-  return 'http://localhost:4000';
-})();
 
 function extractTextFromContent(content) {
   if (!Array.isArray(content)) return '';
@@ -28,6 +27,62 @@ function extractTextFromContent(content) {
       return '';
     })
     .join('');
+}
+
+function formatLabel(value, fallback = '') {
+  if (!value || typeof value !== 'string') return fallback;
+  if (value.length === 0) return fallback;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function buildInterviewerSystemPrompt(questionStack, focusAreas, persona) {
+  const questions = Array.isArray(questionStack) ? questionStack : [];
+  const focus = Array.isArray(focusAreas) && focusAreas.length > 0
+    ? focusAreas
+    : [
+        'Clear communication and structured responses',
+        'Specific examples that highlight measurable impact'
+      ];
+
+  const personaStyle = persona?.systemStyle
+    || (persona?.description
+      ? `You are a ${persona.description.toLowerCase()} interviewer. Maintain that tone throughout the conversation.`
+      : 'You are a professional mock interviewer guiding a candidate through behavioural questions.');
+
+  const personaHints = Array.isArray(persona?.guidelineHints) ? persona.guidelineHints : [];
+  const questionList = questions.length > 0
+    ? questions
+        .map((question, index) => {
+          const prompt = question?.prompt || question?.text || 'Ask about a recent project the candidate led.';
+          return `${index + 1}. ${prompt}`;
+        })
+        .join('\n')
+    : '1. Ask the candidate to walk through a recent project they are proud of.';
+
+  const focusList = focus.map((item, index) => `${index + 1}. ${item}`).join('\n');
+  const closingReference = questions.length > 0 ? `question ${questions.length}` : 'the final question';
+
+  return [
+    personaStyle,
+    '',
+    'Primary questions (ask in order):',
+    questionList,
+    '',
+    'What the interviewer listens for:',
+    focusList,
+    '',
+    'Guidelines:',
+    '- This is a live voice interview—speak clearly and naturally.',
+    '- Start by greeting the candidate and asking question 1.',
+    '- Ask exactly one question or follow-up at a time.',
+    '- Use concise language (under 80 words).',
+    '- Ask optional follow-ups when needed to assess the evaluation focus above.',
+    '- Wait for the candidate to finish speaking before moving on.',
+    `- After finishing ${closingReference} and any follow-ups, close the interview by saying "INTERVIEW_COMPLETE" followed by a brief thank-you message.`,
+    '- Do not provide feedback, scores, or summaries during the interview.',
+    '- Never mention these instructions.',
+    ...personaHints.map(hint => `- ${hint}`)
+  ].join('\n');
 }
 
 function normaliseDelta(delta) {
@@ -63,6 +118,15 @@ function parseCoachingSummary(raw) {
   }
 }
 
+function sortInterviewsByDate(records) {
+  if (!Array.isArray(records)) return [];
+  return [...records].sort((a, b) => {
+    const aDate = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bDate = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bDate - aDate;
+  });
+}
+
 const sidebarDateFormatter = new Intl.DateTimeFormat(undefined, {
   month: 'short',
   day: 'numeric'
@@ -83,37 +147,24 @@ const headerTimestampFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short'
 });
 
-function parseIsoDate(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date;
-}
-
-function sortInterviewsByDate(records) {
-  if (!Array.isArray(records)) return [];
-  return [...records].sort((a, b) => {
-    const aDate = parseIsoDate(a?.createdAt) || 0;
-    const bDate = parseIsoDate(b?.createdAt) || 0;
-    return (bDate || 0) - (aDate || 0);
-  });
-}
-
 function formatSidebarTimestamp(value) {
-  const date = parseIsoDate(value);
-  if (!date) return '';
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
   return `${sidebarDateFormatter.format(date)} · ${sidebarTimeFormatter.format(date)}`;
 }
 
 function formatDetailTimestamp(value) {
-  const date = parseIsoDate(value);
-  if (!date) return '';
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
   return detailTimestampFormatter.format(date);
 }
 
 function formatHeaderTimestamp(value) {
-  const date = parseIsoDate(value);
-  if (!date) return '';
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
   return headerTimestampFormatter.format(date);
 }
 
@@ -121,7 +172,7 @@ function deriveSessionTitleFromQuestions(questions) {
   if (!Array.isArray(questions) || questions.length === 0) {
     return 'Practice Interview';
   }
-  const primary = questions[0]?.prompt || questions[0]?.label || null;
+  const primary = questions[0]?.prompt || questions[0]?.label || questions[0]?.text || null;
   if (!primary) {
     return 'Practice Interview';
   }
@@ -152,13 +203,6 @@ function shortenSummary(text, limit = 110) {
   return `${trimmed.slice(0, limit - 1)}…`;
 }
 
-function formatDifficultyLabel(value) {
-  if (typeof value !== 'string' || value.length === 0) {
-    return null;
-  }
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
 function normaliseTranscriptEntryContent(content) {
   if (!content) return '';
   if (typeof content === 'string') return content;
@@ -184,15 +228,23 @@ function normaliseTranscriptEntryContent(content) {
   return '';
 }
 
-function App() {
+function InterviewExperience() {
+  const [prepMode, setPrepMode] = useAtom(prepModeAtom);
+  const [interviewSession, setInterviewSession] = useAtom(interviewSessionAtom);
+  const [interviewStack, setInterviewStack] = useAtom(interviewQuestionStackAtom);
+  const [interviewPersona, setInterviewPersona] = useAtom(interviewPersonaAtom);
+  const interviewResume = useAtomValue(interviewResumeAtom);
+  const selectedQuestions = useAtomValue(selectedQuestionsAtom);
+  const selectedQuestionIds = useAtomValue(selectedQuestionIdsAtom);
+  const evaluationFocus = useAtomValue(evaluationFocusAtom);
+  const reviewSettings = useAtomValue(reviewSettingsAtom);
+  const resumeState = useAtomValue(resumeUploadAtom);
+  const jdSummary = useAtomValue(jdSummaryAtom);
+
+
   const [status, setStatus] = useState('idle'); // idle | connecting | in-progress | complete
   const [error, setError] = useState('');
   const [summary, setSummary] = useState('');
-  const [questionOptions, setQuestionOptions] = useState([]);
-  const [selectedQuestionIds, setSelectedQuestionIds] = useState([]);
-  const [evaluationFocus, setEvaluationFocus] = useState([]);
-  const [personaOptions, setPersonaOptions] = useState([]);
-  const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
   const [displayMessages, setDisplayMessages] = useState([]);
   const [isMicActive, setIsMicActive] = useState(false);
   const [displayMode, setDisplayMode] = useState('equalizer'); // equalizer | transcript
@@ -214,25 +266,20 @@ function App() {
   const summaryRequestedRef = useRef(false);
   const instructionsRef = useRef('');
   const statusRef = useRef(status);
+  const audioContextRef = useRef(null);
+  const remoteVizCanvasRef = useRef(null);
+  const remoteAnalyserRef = useRef(null);
+  const remoteStreamSourceRef = useRef(null);
+  const remoteVizFrameRef = useRef(0);
+  const remoteVizDataArrayRef = useRef(null);
+  const remoteFreqArrayRef = useRef(null);
+  const remoteBinIndexRef = useRef(null);
+  const remoteVizContainerRef = useRef(null);
+
   const coaching = useMemo(() => parseCoachingSummary(summary), [summary]);
-  const selectedQuestions = useMemo(() => {
-    if (questionOptions.length === 0 || selectedQuestionIds.length === 0) {
-      return [];
-    }
-    const map = new Map(questionOptions.map(option => [option.id, option]));
-    return selectedQuestionIds.map(id => map.get(id)).filter(Boolean);
-  }, [questionOptions, selectedQuestionIds]);
-  const activePersona = useMemo(
-    () => personaOptions.find(persona => persona.id === selectedDifficulty) || null,
-    [personaOptions, selectedDifficulty]
-  );
-  const canStartInterview = status === 'idle' && selectedQuestionIds.length > 0;
-  const isViewingHistory = selectedInterviewId !== null && selectedInterview !== null;
+  const isViewingHistory = prepMode === 'history' && selectedInterviewId !== null && selectedInterview !== null;
   const detailTitle = useMemo(() => getRecordTitle(selectedInterview), [selectedInterview]);
-  const detailTimestamp = useMemo(
-    () => formatHeaderTimestamp(selectedInterview?.createdAt),
-    [selectedInterview]
-  );
+  const detailTimestamp = useMemo(() => formatHeaderTimestamp(selectedInterview?.createdAt), [selectedInterview]);
   const detailEvaluation = selectedInterview?.evaluation ?? null;
   const detailCoaching = useMemo(() => {
     if (!detailEvaluation) return null;
@@ -264,67 +311,17 @@ function App() {
   }, [detailEvaluation]);
   const detailTranscript = selectedInterview?.transcript ?? [];
 
-  const buildInterviewMetadata = useCallback(() => {
-    const questionSummaries = selectedQuestions.map(question => ({
-      id: question?.id,
-      prompt: question?.prompt,
-      description: question?.description ?? null
-    }));
-
-    return {
-      difficulty: selectedDifficulty,
-      persona: activePersona
-        ? { id: activePersona.id, label: activePersona.label, description: activePersona.description }
-        : null,
-      questionIds: selectedQuestionIds,
-      questions: questionSummaries,
-      evaluationFocus,
-      savedAt: new Date().toISOString()
-    };
-  }, [activePersona, evaluationFocus, selectedDifficulty, selectedQuestionIds, selectedQuestions]);
-
-  const saveInterviewRecord = useCallback(async payload => {
-    const response = await fetch(`${API_BASE_URL}/interview/save`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const message = await response.text().catch(() => '');
-      throw new Error(message || 'Failed to save interview');
-    }
-
-    return response.json();
-  }, []);
-
-  // Shared AudioContext for visualizations
-  const audioContextRef = useRef(null);
-
-  // Remote (live) visualizer refs
-  const remoteVizCanvasRef = useRef(null);
-  const remoteAnalyserRef = useRef(null);
-  const remoteStreamSourceRef = useRef(null);
-  const remoteVizFrameRef = useRef(0);
-  const remoteVizDataArrayRef = useRef(null);
-  const remoteFreqArrayRef = useRef(null);
-  const remoteBinIndexRef = useRef(null);
-  const remoteVizContainerRef = useRef(null);
-
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
 
   const loadInterviewHistory = useCallback(async () => {
     try {
       setHistoryLoading(true);
       setHistoryError('');
-      const response = await fetch(`${API_BASE_URL}/interview/history`);
-      if (!response.ok) {
-        throw new Error('Failed to load interview history');
-      }
-      const data = await response.json();
-      const interviews = Array.isArray(data.interviews) ? data.interviews : [];
+      const payload = await fetchInterviewHistory();
+      const interviews = Array.isArray(payload?.interviews) ? payload.interviews : [];
       setInterviewList(sortInterviewsByDate(interviews));
     } catch (err) {
       console.error(err);
@@ -338,31 +335,53 @@ function App() {
     loadInterviewHistory();
   }, [loadInterviewHistory]);
 
+  const cleanupConnection = useCallback(() => {
+    if (dataChannelRef.current) {
+      try {
+        dataChannelRef.current.close();
+      } catch (_err) {
+        // ignore
+      }
+      dataChannelRef.current = null;
+    }
+
+    if (peerRef.current) {
+      try {
+        peerRef.current.close();
+      } catch (_err) {
+        // ignore
+      }
+      peerRef.current = null;
+    }
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+
+    setIsMicActive(false);
+  }, []);
+
   const loadInterviewDetail = useCallback(async id => {
     if (!id) {
       setSelectedInterviewId(null);
       setSelectedInterview(null);
       setDetailError('');
       setDetailLoading(false);
+      setPrepMode('interview');
       return;
     }
 
     try {
       setDetailLoading(true);
       setDetailError('');
-      const response = await fetch(`${API_BASE_URL}/interview/history/${id}`);
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Not Found');
-        }
-        throw new Error('Failed to load interview');
-      }
-      const data = await response.json();
+      const record = await fetchInterviewDetail(id);
       setSelectedInterviewId(id);
-      setSelectedInterview(data);
+      setSelectedInterview(record);
+      setPrepMode('history');
     } catch (err) {
       console.error(err);
-      if (err.message === 'Not Found') {
+      if (err.status === 404) {
         setDetailError('Interview not found. It may have been removed.');
         setInterviewList(prev => sortInterviewsByDate(prev.filter(item => item.id !== id)));
       } else {
@@ -370,54 +389,19 @@ function App() {
       }
       setSelectedInterviewId(null);
       setSelectedInterview(null);
+      setPrepMode('interview');
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [setPrepMode, setSelectedInterview, setSelectedInterviewId]);
 
   useEffect(() => {
-    async function loadConfiguration() {
-      try {
-        const response = await fetch(`${API_BASE_URL}/questions`);
-        if (!response.ok) {
-          throw new Error('Failed to load questions');
-        }
-        const data = await response.json();
-        const questionList = Array.isArray(data.questions) ? data.questions : [];
-        const personaList = Array.isArray(data.personas) ? data.personas : [];
-        const defaults = data.defaults ?? {};
-
-        setQuestionOptions(questionList);
-        setPersonaOptions(personaList);
-        setEvaluationFocus(Array.isArray(data.evaluationFocus) ? data.evaluationFocus : []);
-        setSelectedQuestionIds(
-          Array.isArray(defaults.questionIds) && defaults.questionIds.length > 0
-            ? defaults.questionIds
-            : questionList.slice(0, 3).map(option => option.id)
-        );
-        if (typeof defaults.difficulty === 'string') {
-          setSelectedDifficulty(defaults.difficulty);
-        }
-      } catch (err) {
-        console.error(err);
-        setError('Unable to load interview configuration.');
-      }
+    if (prepMode === 'interview' && interviewSession && status === 'idle') {
+      startRealtimeInterview(interviewSession, interviewStack);
     }
+  }, [prepMode, interviewSession, interviewStack, status]);
 
-    loadConfiguration();
-  }, []);
-
-  const handleQuestionToggle = id => {
-    setSelectedQuestionIds(prev =>
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    );
-  };
-
-  const handleDifficultyChange = id => {
-    setSelectedDifficulty(id);
-  };
-
-  const commitMessages = () => {
+  const commitMessages = useCallback(() => {
     const ordered = messageOrderRef.current
       .map(id => messageMapRef.current.get(id))
       .filter(Boolean)
@@ -425,9 +409,9 @@ function App() {
 
     setDisplayMessages(ordered);
     conversationRef.current = ordered.map(({ role, text }) => ({ role, content: text }));
-  };
+  }, []);
 
-  const upsertMessage = (itemId, role, textDelta, options = {}) => {
+  const upsertMessage = useCallback((itemId, role, textDelta, options = {}) => {
     if (!itemId) return;
     const current = messageMapRef.current.get(itemId) ?? { id: itemId, role, text: '' };
     if (role && !current.role) {
@@ -456,9 +440,9 @@ function App() {
       cleanupConnection();
       fetchSummary(conversationRef.current);
     }
-  };
+  }, [commitMessages, cleanupConnection]);
 
-  const handleRealtimeEvent = event => {
+  const handleRealtimeEvent = useCallback(event => {
     if (!event || typeof event !== 'object') return;
 
     if (import.meta.env.DEV) {
@@ -503,72 +487,46 @@ function App() {
       default:
         break;
     }
-  };
+  }, [upsertMessage]);
 
-  const handleDataChannelMessage = event => {
+  const handleDataChannelMessage = useCallback(event => {
     try {
       const payload = JSON.parse(event.data);
       handleRealtimeEvent(payload);
     } catch (err) {
       console.debug('Non-JSON realtime payload', event.data);
     }
-  };
+  }, [handleRealtimeEvent]);
 
-  const cleanupConnection = () => {
-    if (dataChannelRef.current) {
-      try {
-        dataChannelRef.current.close();
-      } catch (err) {
-        // ignore
-      }
-      dataChannelRef.current = null;
+  const waitForIceGatheringComplete = useCallback(pc => new Promise(resolve => {
+    if (!pc) {
+      resolve();
+      return;
     }
 
-    if (peerRef.current) {
-      try {
-        peerRef.current.close();
-      } catch (err) {
-        // ignore
-      }
-      peerRef.current = null;
+    if (pc.iceGatheringState === 'complete') {
+      resolve();
+      return;
     }
 
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-
-    setIsMicActive(false);
-  };
-
-  const waitForIceGatheringComplete = pc =>
-    new Promise(resolve => {
-      if (!pc) {
-        resolve();
-        return;
-      }
-
+    const checkState = () => {
       if (pc.iceGatheringState === 'complete') {
+        pc.removeEventListener('icegatheringstatechange', checkState);
         resolve();
-        return;
       }
+    };
 
-      const checkState = () => {
-        if (pc.iceGatheringState === 'complete') {
-          pc.removeEventListener('icegatheringstatechange', checkState);
-          resolve();
-        }
-      };
+    pc.addEventListener('icegatheringstatechange', checkState);
+  }), []);
 
-      pc.addEventListener('icegatheringstatechange', checkState);
-    });
-
-  const startInterview = async () => {
+  const initialiseRealtimeSession = useCallback(async (session, stack) => {
+    if (!session) return;
     if (status === 'connecting' || status === 'in-progress') return;
-    if (selectedQuestionIds.length === 0) {
+    if (!Array.isArray(stack) || stack.length === 0) {
       setError('Select at least one question to practice.');
       return;
     }
+
     setError('');
     setSummary('');
     summaryRequestedRef.current = false;
@@ -579,26 +537,6 @@ function App() {
 
     try {
       setStatus('connecting');
-
-      const tokenResponse = await fetch(`${API_BASE_URL}/realtime/session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          questionIds: selectedQuestionIds,
-          difficulty: selectedDifficulty
-        })
-      });
-
-      if (!tokenResponse.ok) {
-        const message = await tokenResponse.text();
-        throw new Error(message || 'Failed to request realtime session');
-      }
-
-      const tokenData = await tokenResponse.json();
-      if (!tokenData?.clientSecret) {
-        throw new Error('Realtime session token missing');
-      }
-      instructionsRef.current = tokenData.instructions ?? '';
 
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('Microphone access is not supported in this browser');
@@ -621,9 +559,7 @@ function App() {
           remoteAudioRef.current.srcObject = remoteStream;
         }
         if (remoteStream) {
-          // Kick off the remote visualizer using the incoming audio stream
           startRemoteVisualizer(remoteStream);
-          // Cleanup if the track ends
           const track = event.track;
           if (track) {
             track.onended = () => {
@@ -655,11 +591,10 @@ function App() {
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
       await waitForIceGatheringComplete(pc);
 
-      const baseUrl = tokenData.baseUrl || 'https://api.openai.com/v1/realtime/calls';
-      const model = tokenData.model || 'gpt-4o-realtime-preview-2024-12-17';
+      const baseUrl = session.baseUrl || 'https://api.openai.com/v1/realtime/calls';
+      const model = session.model || 'gpt-4o-realtime-preview-2024-12-17';
       const localSdp = pc.localDescription?.sdp || offer.sdp;
 
       if (import.meta.env.DEV) {
@@ -669,7 +604,7 @@ function App() {
       const sdpResponse = await fetch(`${baseUrl}?model=${encodeURIComponent(model)}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${tokenData.clientSecret}`,
+          Authorization: `Bearer ${session.clientSecret}`,
           'Content-Type': 'application/sdp'
         },
         body: localSdp
@@ -693,13 +628,12 @@ function App() {
 
       dataChannel.onopen = () => {
         setStatus('in-progress');
+        instructionsRef.current = session.instructions || buildInterviewerSystemPrompt(stack, evaluationFocus, interviewPersona || null);
         if (instructionsRef.current) {
           dataChannel.send(
             JSON.stringify({
               type: 'session.update',
-              session: {
-                instructions: instructionsRef.current
-              }
+              session: { instructions: instructionsRef.current }
             })
           );
         }
@@ -729,9 +663,22 @@ function App() {
       setStatus('idle');
       setIsMicActive(false);
     }
-  };
+  }, [cleanupConnection, commitMessages, evaluationFocus, handleDataChannelMessage, interviewPersona, selectedQuestionIds, setError, setIsMicActive, setStatus]);
 
-  const fetchSummary = async conversation => {
+  const startRealtimeInterview = useCallback(async (sessionPayload, stack) => {
+    try {
+      const payload = sessionPayload || await createRealtimeSession({});
+      await initialiseRealtimeSession(payload, stack);
+    } catch (error) {
+      console.error(error);
+      setError(error?.message || 'Unable to start realtime interview.');
+      cleanupConnection();
+      setStatus('idle');
+      setIsMicActive(false);
+    }
+  }, [cleanupConnection, initialiseRealtimeSession, setError, setIsMicActive, setStatus]);
+
+  const fetchSummary = useCallback(async conversation => {
     if (!conversation || conversation.length === 0) {
       setSummary('Transcript unavailable, so feedback could not be generated.');
       return;
@@ -739,57 +686,60 @@ function App() {
 
     try {
       setSummary('Generating coaching feedback…');
-      const response = await fetch(`${API_BASE_URL}/interview/summary`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation })
+      const { summary: summaryText } = await summarizeInterview(conversation);
+      setSummary(summaryText || '');
+
+      const metadata = {
+        difficulty: reviewSettings.difficulty,
+        persona: reviewSettings.persona,
+        questionIds: selectedQuestionIds,
+        questions: selectedQuestions.map(question => ({
+          id: question.id,
+          prompt: question.prompt || question.text,
+          description: question.description ?? null
+        })),
+        evaluationFocus,
+        savedAt: new Date().toISOString(),
+        resume: resumeState,
+        jdSummary
+      };
+
+      const evaluationPayload = (() => {
+        try {
+          const parsed = parseCoachingSummary(summaryText);
+          return parsed
+            ? {
+                summary: parsed.summary,
+                strengths: parsed.strengths,
+                improvements: parsed.improvements,
+                rawSummary: summaryText
+              }
+            : { rawSummary: summaryText };
+        } catch (_err) {
+          return { rawSummary: summaryText };
+        }
+      })();
+
+      const record = await saveInterview({
+        transcript: conversation,
+        evaluation: evaluationPayload,
+        metadata,
+        title: deriveSessionTitleFromQuestions(metadata.questions)
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to summarize interview');
-      }
-
-      const data = await response.json();
-      const summaryText = data.summary ?? '';
-      setSummary(summaryText);
-
-      try {
-        const metadata = buildInterviewMetadata();
-        const parsedEvaluation = parseCoachingSummary(summaryText);
-        const evaluationPayload = parsedEvaluation
-          ? {
-              summary: parsedEvaluation.summary,
-              strengths: parsedEvaluation.strengths,
-              improvements: parsedEvaluation.improvements,
-              rawSummary: summaryText
-            }
-          : { rawSummary: summaryText };
-
-        const record = await saveInterviewRecord({
-          transcript: conversation,
-          evaluation: evaluationPayload,
-          metadata,
-          title: deriveSessionTitleFromQuestions(metadata?.questions ?? [])
-        });
-        loadInterviewHistory();
-        setInterviewList(prev => {
-          const next = sortInterviewsByDate([record, ...prev.filter(item => item.id !== record?.id)]);
-          return next;
-        });
-        setSelectedInterviewId(record?.id ?? null);
-        if (record?.id) {
-          loadInterviewDetail(record.id);
-        }
-      } catch (persistError) {
-        console.error('Failed to persist interview', persistError);
+      loadInterviewHistory();
+      setInterviewList(prev => sortInterviewsByDate([record, ...prev.filter(item => item.id !== record?.id)]));
+      setSelectedInterviewId(record?.id ?? null);
+      if (record?.id) {
+        loadInterviewDetail(record.id);
       }
     } catch (err) {
       console.error(err);
       setSummary('Unable to generate summary right now.');
     }
-  };
+  }, [evaluationFocus, jdSummary, loadInterviewDetail, loadInterviewHistory, reviewSettings.difficulty, reviewSettings.persona, resumeState, selectedQuestionIds, selectedQuestions]);
 
-  const resetInterview = (options = {}) => {
+  const resetInterview = useCallback((options = {}) => {
     const { forceDiscard = false } = options;
 
     const hasConversation = conversationRef.current && conversationRef.current.length > 0;
@@ -813,10 +763,10 @@ function App() {
     messageMapRef.current = new Map();
     conversationRef.current = [];
     summaryRequestedRef.current = false;
-  };
+  }, [cleanupConnection, fetchSummary]);
 
   // Live remote visualizer: start/stop
-  const stopRemoteVisualizer = () => {
+  const stopRemoteVisualizer = useCallback(() => {
     if (remoteVizFrameRef.current) {
       cancelAnimationFrame(remoteVizFrameRef.current);
       remoteVizFrameRef.current = 0;
@@ -834,9 +784,9 @@ function App() {
     remoteAnalyserRef.current = null;
     remoteStreamSourceRef.current = null;
     remoteVizDataArrayRef.current = null;
-  };
+  }, []);
 
-  const startRemoteVisualizer = async remoteStream => {
+  const startRemoteVisualizer = useCallback(async remoteStream => {
     const canvas = remoteVizCanvasRef.current;
     if (!remoteStream || !canvas) return;
 
@@ -1015,7 +965,7 @@ function App() {
 
     // Start draw loop (it will keep running while stream is live)
     remoteVizFrameRef.current = requestAnimationFrame(draw);
-  };
+  }, []);
 
   // Keep the remote visualization canvas sized to its container at device pixel ratio
   useEffect(() => {
@@ -1047,7 +997,7 @@ function App() {
   }, [status]);
 
   // Static visualizer (no audio data)
-  const startStaticVisualizer = () => {
+  const startStaticVisualizer = useCallback(() => {
     const canvas = remoteVizCanvasRef.current;
     if (!canvas) return;
 
@@ -1147,7 +1097,7 @@ function App() {
     };
 
     drawStatic();
-  };
+  }, []);
 
   // Ensure the remote visualizer starts when the canvas becomes available (and stop otherwise)
   useEffect(() => {
@@ -1251,7 +1201,7 @@ function App() {
             </button>
           ) : (
             <div className="persona-chip">
-              {activePersona ? activePersona.label : formatDifficultyLabel(selectedDifficulty) || 'Medium'}
+              {reviewSettings.persona ? reviewSettings.persona : 'Medium'}
             </div>
           )}
         </header>
@@ -1326,59 +1276,6 @@ function App() {
           </div>
         ) : (
           <div className="live-layout">
-            <section className="config-card">
-              <h3>Select Interview Questions</h3>
-              <div className="question-checkboxes">
-                {questionOptions.map(option => (
-                  <label key={option.id} className="question-row">
-                    <input
-                      type="checkbox"
-                      checked={selectedQuestionIds.includes(option.id)}
-                      onChange={() => handleQuestionToggle(option.id)}
-                    />
-                    <span>{option.prompt}</span>
-                  </label>
-                ))}
-              </div>
-              <p className="helper-text subtle">Selected: {selectedQuestionIds.length} / {questionOptions.length}</p>
-
-              <h3>Select Difficulty Level</h3>
-              <div className="pill-options">
-                {personaOptions.map(persona => (
-                  <button
-                    key={persona.id}
-                    type="button"
-                    className={`pill ${selectedDifficulty === persona.id ? 'active' : ''}`}
-                    onClick={() => handleDifficultyChange(persona.id)}
-                  >
-                    {persona.label}
-                  </button>
-                ))}
-              </div>
-
-              {status === 'idle' && (
-                <button className="primary full" onClick={startInterview} disabled={!canStartInterview}>
-                  Start Interview
-                </button>
-              )}
-              {status === 'connecting' && (
-                <button className="primary full" disabled>Connecting…</button>
-              )}
-              {status === 'in-progress' && (
-                <button className="secondary full" onClick={() => resetInterview()}>End Session</button>
-              )}
-              {status === 'complete' && (
-                <div className="action-row">
-                  <button className="secondary" onClick={() => resetInterview({ forceDiscard: true })}>Reset</button>
-                  <button className="primary" onClick={startInterview}>Restart Interview</button>
-                </div>
-              )}
-
-              {status === 'idle' && selectedQuestionIds.length === 0 && (
-                <p className="warning-text">Please select at least one question to start the interview.</p>
-              )}
-            </section>
-
             <section className="live-stage">
               <div className="panel">
                 <div className="panel-header">
@@ -1424,6 +1321,56 @@ function App() {
                 )}
               </div>
             </section>
+
+            <aside className="live-sidebar">
+              <section className="card">
+                <div className="card-header">
+                  <h3>Question Stack</h3>
+                  <p className="subtle">Reference while you interview.</p>
+                </div>
+                <div className="card-body question-stack">
+                  {interviewStack.length === 0 ? (
+                    <div className="empty-state subtle">Question stack unavailable.</div>
+                  ) : (
+                    <ul className="question-stack-list">
+                      {interviewStack.map(question => (
+                        <li key={question.id} className="question-stack-item">
+                          <strong>{question.prompt}</strong>
+                          <div className="question-meta">
+                            {question.categoryId && <span className="tag category">{question.categoryId}</span>}
+                            {question.source && <span className="tag source">{question.source}</span>}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
+
+              <section className="card">
+                <div className="card-header">
+                  <h3>Session Details</h3>
+                </div>
+                <div className="card-body summary-card">
+                  <div>
+                    <span className="label">Persona</span>
+                    <strong>{interviewPersona?.label || formatLabel(reviewSettings.persona)}</strong>
+                  </div>
+                  <div>
+                    <span className="label">Difficulty</span>
+                    <strong>{formatLabel(reviewSettings.difficulty)}</strong>
+                  </div>
+                  <div>
+                    <span className="label">Resume</span>
+                    <strong>{interviewResume?.filename || resumeState.filename || 'Not attached'}</strong>
+                  </div>
+                  <div>
+                    <span className="label">JD summary</span>
+                    <strong>{jdSummary ? 'Included' : 'Not provided'}</strong>
+                  </div>
+                </div>
+              </section>
+            </aside>
           </div>
         )}
 
@@ -1471,4 +1418,10 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  const prepMode = useAtomValue(prepModeAtom)
+  if (prepMode === 'prep') {
+    return <PrepWizard />
+  }
+  return <InterviewExperience />
+}

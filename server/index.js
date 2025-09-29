@@ -1,13 +1,25 @@
+import crypto from 'crypto';
 import express from 'express';
 import cors from 'cors';
 import { OpenAI } from 'openai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
+import os from 'os';
+import multer from 'multer';
+import mammoth from 'mammoth';
+import { createRequire } from 'module';
+import WordExtractor from 'word-extractor';
 import {
   getInterviewById,
   listInterviews,
-  saveInterview
+  saveInterview,
+  listUserCategories,
+  getUserCategoryById,
+  saveUserCategory,
+  updateUserCategory,
+  deleteUserCategory
 } from './interviewStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,7 +35,45 @@ const REALTIME_BASE_URL = process.env.REALTIME_BASE_URL || 'https://api.openai.c
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
+
+const RESUME_SIZE_LIMIT_BYTES = 5 * 1024 * 1024; // 5 MB
+const ALLOWED_RESUME_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain'
+]);
+const ALLOWED_RESUME_EXTENSIONS = new Set(['.pdf', '.doc', '.docx', '.txt']);
+const USER_PLACEHOLDER_ID = 'local';
+
+const tempStorageRoot = path.join(os.tmpdir(), 'interview-prep');
+fs.mkdirSync(tempStorageRoot, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, tempStorageRoot);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueId = crypto.randomUUID();
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    cb(null, `${uniqueId}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: RESUME_SIZE_LIMIT_BYTES },
+  fileFilter: (_req, file, cb) => {
+    const mimetype = (file.mimetype || '').toLowerCase();
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (ALLOWED_RESUME_MIME_TYPES.has(mimetype) || ALLOWED_RESUME_EXTENSIONS.has(ext)) {
+      cb(null, true);
+    } else {
+      cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'resume'));
+    }
+  }
+});
 
 const questionBank = [
   {
@@ -129,6 +179,203 @@ const DEFAULT_TURN_DETECTION = {
   interrupt_response: true
 };
 
+const wordExtractor = new WordExtractor();
+const resumeStore = new Map();
+const RESUME_TEXT_CHAR_LIMIT = 6000;
+const RESUME_RETENTION_MS = 1000 * 60 * 60; // 1 hour
+
+function truncateText(value, limit) {
+  if (!value || typeof value !== 'string') {
+    return '';
+  }
+  if (value.length <= limit) {
+    return value;
+  }
+  return `${value.slice(0, limit)}…`;
+}
+
+async function safeUnlink(filePath) {
+  if (!filePath) return;
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (_err) {
+    // ignore cleanup errors
+  }
+}
+
+function sanitizeExtractedText(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/\r\n/g, '\n')
+    .replace(/\u0000/g, '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+async function extractPdfText(filePath) {
+  const buffer = await fs.promises.readFile(filePath);
+  const result = await pdfParse(buffer).catch(() => ({ text: '' }));
+  return sanitizeExtractedText(result.text || '');
+}
+
+async function extractDocxText(filePath) {
+  const result = await mammoth.extractRawText({ path: filePath }).catch(() => ({ value: '' }));
+  return sanitizeExtractedText(result.value || '');
+}
+
+async function extractDocText(filePath) {
+  try {
+    const document = await wordExtractor.extract(filePath);
+    return sanitizeExtractedText(document?.getBody() || '');
+  } catch (_err) {
+    return '';
+  }
+}
+
+async function extractPlainText(filePath) {
+  const contents = await fs.promises.readFile(filePath, 'utf8');
+  return sanitizeExtractedText(contents);
+}
+
+async function extractTextFromFile(filePath, mimetype, originalName) {
+  const ext = path.extname(originalName || filePath || '').toLowerCase();
+  if (mimetype === 'application/pdf' || ext === '.pdf') {
+    return extractPdfText(filePath);
+  }
+  if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === '.docx') {
+    return extractDocxText(filePath);
+  }
+  if (mimetype === 'application/msword' || ext === '.doc') {
+    return extractDocText(filePath);
+  }
+  return extractPlainText(filePath);
+}
+
+function cleanupExpiredResumes() {
+  const cutoff = Date.now() - RESUME_RETENTION_MS;
+  for (const [key, value] of resumeStore.entries()) {
+    if (value.createdAt < cutoff) {
+      resumeStore.delete(key);
+      safeUnlink(value.path);
+    }
+  }
+}
+
+function buildPrepQuestions(questionStack) {
+  if (!Array.isArray(questionStack) || questionStack.length === 0) {
+    return resolveQuestions();
+  }
+
+  return questionStack
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') return null;
+      const fallback = questionMap.get(item.id) || null;
+      const prompt = typeof item.text === 'string' && item.text.trim().length > 0
+        ? item.text.trim()
+        : fallback?.prompt;
+      if (!prompt) return null;
+      return {
+        id: item.id || fallback?.id || `custom-${index + 1}`,
+        prompt,
+        description: fallback?.description ?? null,
+        source: item.source || fallback?.source || 'custom',
+        categoryId: item.categoryId || null,
+        estimatedDuration: Number.isFinite(item.estimatedDuration) ? Number(item.estimatedDuration) : null
+      };
+    })
+    .filter(Boolean);
+}
+
+function enrichSystemPromptWithContext(basePrompt, { resumeText, resumeFilename, jdSummary }) {
+  const sections = [basePrompt];
+
+  if (resumeText) {
+    sections.push(
+      '',
+      'Candidate resume excerpt (confidential – reference naturally, do not quote verbatim or repeat sensitive data):',
+      resumeText
+    );
+    if (resumeFilename) {
+      sections.push('', `Resume filename: ${resumeFilename}`);
+    }
+  }
+
+  if (jdSummary) {
+    sections.push(
+      '',
+      'Job description summary provided by the candidate:',
+      jdSummary
+    );
+  }
+
+  return sections.join('\n');
+}
+
+async function createRealtimeSession({ instructions, persona }) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OpenAI API key is not configured.');
+  }
+
+  const turnDetection = {
+    ...DEFAULT_TURN_DETECTION,
+    ...(persona?.turnDetectionOverrides ?? {})
+  };
+
+  const sessionBody = {
+    session: {
+      type: 'realtime',
+      model: REALTIME_MODEL,
+      instructions,
+      audio: {
+        input: {
+          transcription: {
+            model: process.env.REALTIME_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe',
+            language: 'en'
+          },
+          turn_detection: turnDetection
+        },
+        output: {
+          voice: persona?.voice || REALTIME_VOICE
+        }
+      }
+    }
+  };
+
+  const response = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(sessionBody)
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload) {
+    const errorMsg = payload?.error?.message || 'Failed to create realtime session token.';
+    const error = new Error(errorMsg);
+    error.details = payload;
+    throw error;
+  }
+
+  const clientSecret = payload?.client_secret?.value || payload?.value;
+  if (!clientSecret) {
+    const error = new Error('Realtime token missing in response.');
+    error.details = payload;
+    throw error;
+  }
+
+  return {
+    clientSecret,
+    expiresAt: payload?.client_secret?.expires_at || payload?.expires_at || null,
+    model: REALTIME_MODEL,
+    baseUrl: REALTIME_BASE_URL
+  };
+}
+
 function resolveQuestions(questionIds) {
   if (Array.isArray(questionIds) && questionIds.length > 0) {
     const seen = new Set();
@@ -190,6 +437,309 @@ function buildSummaryPrompt(transcript) {
     `{"summary": "string (3 sentences)", "strengths": ["string", "string", "string"], "improvements": ["string", "string", "string"]}.\n` +
     `Each bullet must be brief and actionable. Do not add extra keys or commentary.`;
 }
+
+app.get('/interview/preferences/categories', (_req, res) => {
+  try {
+    const categories = listUserCategories(USER_PLACEHOLDER_ID);
+    res.json({ categories });
+  } catch (error) {
+    console.error('Error listing custom categories:', error);
+    res.status(500).json({ error: 'Failed to load custom categories.' });
+  }
+});
+
+app.post('/interview/preferences/categories', (req, res) => {
+  try {
+    const { title, questions } = req.body ?? {};
+    const category = saveUserCategory({
+      userId: USER_PLACEHOLDER_ID,
+      title,
+      questions
+    });
+    res.status(201).json(category);
+  } catch (error) {
+    console.error('Error creating custom category:', error);
+    const status = error.message === 'Category title is required' ? 400 : 500;
+    res.status(status).json({ error: status === 400 ? error.message : 'Failed to create category.' });
+  }
+});
+
+app.patch('/interview/preferences/categories/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, questions } = req.body ?? {};
+    const category = updateUserCategory({
+      id,
+      userId: USER_PLACEHOLDER_ID,
+      title,
+      questions
+    });
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found.' });
+    }
+    res.json(category);
+  } catch (error) {
+    console.error('Error updating custom category:', error);
+    res.status(500).json({ error: 'Failed to update category.' });
+  }
+});
+
+app.delete('/interview/preferences/categories/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = getUserCategoryById(id, USER_PLACEHOLDER_ID);
+    if (!existing) {
+      return res.status(404).json({ error: 'Category not found.' });
+    }
+    deleteUserCategory(id, USER_PLACEHOLDER_ID);
+    res.status(204).send();
+  } catch (error) {
+    console.error('Error deleting custom category:', error);
+    res.status(500).json({ error: 'Failed to delete category.' });
+  }
+});
+
+function handleUploadError(err, res) {
+  if (!err) return false;
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({ error: 'File exceeds 5 MB limit.' });
+      return true;
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      res.status(400).json({ error: 'Unsupported file type. Upload PDF, DOC/DOCX, or TXT.' });
+      return true;
+    }
+  }
+  console.error('Upload error:', err);
+  res.status(500).json({ error: 'File upload failed.' });
+  return true;
+}
+
+app.post('/interview/resume', (req, res) => {
+  upload.single('resume')(req, res, err => {
+    if (handleUploadError(err, res)) {
+      return;
+    }
+    cleanupExpiredResumes();
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: 'Resume file is required.' });
+      return;
+    }
+
+    (async () => {
+      try {
+        const text = await extractTextFromFile(file.path, file.mimetype, file.originalname);
+        const truncatedText = truncateText(text, RESUME_TEXT_CHAR_LIMIT);
+        const resumeId = path.basename(file.filename, path.extname(file.filename));
+        const entry = {
+          id: resumeId,
+          path: file.path,
+          originalName: file.originalname || file.filename,
+          storedName: file.filename,
+          mimetype: file.mimetype,
+          size: file.size,
+          text: truncatedText,
+          createdAt: Date.now()
+        };
+        resumeStore.set(resumeId, entry);
+        res.status(201).json({
+          resumeRef: resumeId,
+          filename: entry.originalName,
+          size: entry.size,
+          mimetype: entry.mimetype
+        });
+      } catch (error) {
+        console.error('Failed to process resume upload:', error);
+        await safeUnlink(file.path);
+        res.status(500).json({ error: 'Unable to process resume file.' });
+      }
+    })().catch(error => {
+      console.error('Unexpected resume upload failure:', error);
+      res.status(500).json({ error: 'Unable to upload resume.' });
+    });
+  });
+});
+
+app.delete('/interview/resume/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const record = resumeStore.get(id);
+    if (!record) {
+      res.status(204).send();
+      return;
+    }
+    resumeStore.delete(id);
+    await safeUnlink(record.path);
+    res.status(204).send();
+  } catch (error) {
+    console.error('Error deleting resume:', error);
+    res.status(500).json({ error: 'Failed to delete resume.' });
+  }
+});
+
+async function callJDGPT(promptPayload, attempt = 1) {
+  try {
+    const response = await openai.responses.parse({
+      model: 'gpt-5-mini',
+      input: promptPayload,
+      json_schema: {
+        name: 'JDGenerationResponse',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            promptSummary: {
+              type: 'string'
+            },
+            categories: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  title: { type: 'string' },
+                  questions: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      additionalProperties: false,
+                      properties: {
+                        id: { type: 'string' },
+                        text: { type: 'string' },
+                        rationale: { type: 'string' }
+                      },
+                      required: ['text']
+                    },
+                    minItems: 1
+                  }
+                },
+                required: ['title', 'questions']
+              },
+              minItems: 1
+            }
+          },
+          required: ['categories']
+        }
+      }
+    });
+
+    const output = response?.output?.[0];
+    const parsed = output?.parsed;
+    if (!parsed) {
+      throw new Error('Empty JD generation response');
+    }
+    return parsed;
+  } catch (error) {
+    if (attempt < 2) {
+      console.warn('JD generation retrying after error:', error);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      return callJDGPT(promptPayload, attempt + 1);
+    }
+    throw error;
+  }
+}
+
+function normaliseJDQuestions(categories) {
+  if (!Array.isArray(categories)) return [];
+  return categories
+    .map(category => {
+      if (!category || typeof category !== 'object') return null;
+      const title = typeof category.title === 'string' ? category.title.trim() : '';
+      const questions = Array.isArray(category.questions)
+        ? category.questions
+            .map(question => {
+              if (!question || typeof question !== 'object') return null;
+              const text = typeof question.text === 'string' ? question.text.trim() : '';
+              if (!text) return null;
+              return {
+                id: question.id || crypto.randomUUID(),
+                text,
+                rationale: typeof question.rationale === 'string' ? question.rationale.trim() : ''
+              };
+            })
+            .filter(Boolean)
+        : [];
+      if (!title || questions.length === 0) return null;
+      return { title, questions };
+    })
+    .filter(Boolean);
+}
+
+app.post('/interview/jd', (req, res) => {
+  const processText = async text => {
+    const trimmed = truncateText(text, 8000);
+    if (!trimmed) {
+      throw new Error('Unable to extract text from job description.');
+    }
+
+    const promptPayload = [
+      {
+        role: 'system',
+        content:
+          'You generate structured interview questions from a job description. Output JSON: {"promptSummary": string, "categories": [{"title": string, "questions": [{"id": string, "text": string, "rationale": string}]}]}.'
+      },
+      {
+        role: 'user',
+        content: `Job description:\n${trimmed}\n\nGenerate 3-4 categories with 2-3 questions each. Questions should be concise and PM-focused.`
+      }
+    ];
+
+    const result = await callJDGPT(promptPayload);
+    const categories = normaliseJDQuestions(result?.categories);
+    if (categories.length === 0) {
+      throw new Error('No questions generated.');
+    }
+
+    return {
+      categories,
+      promptSummary: typeof result?.promptSummary === 'string' ? result.promptSummary : ''
+    };
+  };
+
+  if (req.is('application/json')) {
+    cleanupExpiredResumes();
+    const text = typeof req.body?.jobDescription === 'string' ? req.body.jobDescription : '';
+    processText(text)
+      .then(payload => res.json(payload))
+      .catch(error => {
+        console.error('JD generation failed:', error);
+        res.status(500).json({ error: error?.message || 'Failed to generate questions from JD.' });
+      });
+    return;
+  }
+
+  upload.single('jd')(req, res, err => {
+    if (handleUploadError(err, res)) {
+      return;
+    }
+    cleanupExpiredResumes();
+
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: 'JD file is required.' });
+      return;
+    }
+
+    (async () => {
+      try {
+        const jdText = await extractTextFromFile(file.path, file.mimetype, file.originalname);
+        const payload = await processText(jdText);
+        res.json(payload);
+      } catch (error) {
+        console.error('JD generation failed:', error);
+        res.status(500).json({ error: 'Failed to generate questions from JD.' });
+      } finally {
+        await safeUnlink(file.path);
+      }
+    })().catch(async error => {
+      console.error('Unexpected JD processing failure:', error);
+      await safeUnlink(file?.path);
+      res.status(500).json({ error: 'Failed to process job description.' });
+    });
+  });
+});
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
@@ -365,67 +915,25 @@ app.get('/interview/history/:id', (req, res) => {
 });
 
 app.post('/realtime/session', async (req, res) => {
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: 'OpenAI API key is not configured.' });
-  }
-
   try {
     const { questionIds, difficulty } = req.body ?? {};
     const selectedQuestions = resolveQuestions(questionIds);
     const persona = resolvePersona(difficulty);
-    const instructions = buildInterviewerSystemPrompt(selectedQuestions, evaluationFocus, persona);
-    const voice = persona.voice || REALTIME_VOICE;
-    const turnDetection = {
-      ...DEFAULT_TURN_DETECTION,
-      ...(persona.turnDetectionOverrides ?? {})
-    };
-    const sessionBody = {
-      session: {
-        type: 'realtime',
-        model: REALTIME_MODEL,
-        instructions,
-        audio: {
-          input: {
-            transcription: {
-              model: process.env.REALTIME_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe',
-              language: 'en'
-            },
-            turn_detection: turnDetection
-          },
-          output: {
-            voice
-          }
-        }
-      }
-    };
-
-    const response = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(sessionBody)
+    const baseInstructions = buildInterviewerSystemPrompt(selectedQuestions, evaluationFocus, persona);
+    const enrichedInstructions = enrichSystemPromptWithContext(baseInstructions, {
+      resumeText: '',
+      resumeFilename: '',
+      jdSummary: ''
     });
 
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload) {
-      console.error('Failed to create realtime session token:', payload);
-      return res.status(500).json({ error: 'Failed to create realtime session token.' });
-    }
-
-    const clientSecret = payload?.client_secret?.value || payload?.value;
-    if (!clientSecret) {
-      console.error('Unexpected realtime token response:', payload);
-      return res.status(500).json({ error: 'Realtime token missing in response.' });
-    }
+    const session = await createRealtimeSession({
+      instructions: enrichedInstructions,
+      persona
+    });
 
     res.json({
-      clientSecret,
-      expiresAt: payload?.client_secret?.expires_at || payload?.expires_at || null,
-      model: REALTIME_MODEL,
-      baseUrl: REALTIME_BASE_URL,
-      instructions,
+      ...session,
+      instructions: enrichedInstructions,
       persona: {
         id: persona.id,
         label: persona.label,
@@ -439,6 +947,76 @@ app.post('/realtime/session', async (req, res) => {
   } catch (error) {
     console.error('Error creating realtime session:', error);
     res.status(500).json({ error: 'Failed to create realtime session.' });
+  }
+});
+
+app.post('/interview/start-session', async (req, res) => {
+  try {
+    const {
+      questionStack,
+      persona: requestedPersona,
+      difficulty,
+      resumeRef,
+      jdSummary
+    } = req.body ?? {};
+
+    cleanupExpiredResumes();
+
+    const selected = buildPrepQuestions(questionStack);
+    const personaKey = requestedPersona?.id || requestedPersona || difficulty;
+    const persona = resolvePersona(personaKey);
+    const systemPrompt = buildInterviewerSystemPrompt(selected, evaluationFocus, persona);
+
+    let resumeText = '';
+    let resumeFilename = '';
+    if (resumeRef && typeof resumeRef === 'string') {
+      const stored = resumeStore.get(resumeRef);
+      if (!stored) {
+        return res.status(400).json({ error: 'Resume reference is invalid or expired.' });
+      }
+      resumeText = stored.text || '';
+      resumeFilename = stored.originalName || '';
+    }
+
+    const jdSummaryText = typeof jdSummary === 'string' ? jdSummary.trim() : '';
+    const enrichedPrompt = enrichSystemPromptWithContext(systemPrompt, {
+      resumeText,
+      resumeFilename,
+      jdSummary: jdSummaryText
+    });
+
+    const session = await createRealtimeSession({
+      instructions: enrichedPrompt,
+      persona
+    });
+
+    const preparedQuestions = selected.map(question => ({
+      id: question.id,
+      prompt: question.prompt,
+      source: question.source || 'custom',
+      categoryId: question.categoryId || null,
+      estimatedDuration: question.estimatedDuration ?? null
+    }));
+
+    res.status(201).json({
+      session,
+      persona: {
+        id: persona.id,
+        label: persona.label,
+        description: persona.description
+      },
+      questionStack: preparedQuestions,
+      resume: resumeRef
+        ? {
+            resumeRef,
+            filename: resumeFilename
+          }
+        : null,
+      jdSummary: jdSummaryText || null
+    });
+  } catch (error) {
+    console.error('Error starting prepared session:', error);
+    res.status(500).json({ error: 'Failed to start interview session.' });
   }
 });
 
