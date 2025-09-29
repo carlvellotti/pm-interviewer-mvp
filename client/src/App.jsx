@@ -17,6 +17,7 @@ import {
   interviewListAtom
 } from './atoms/prepState.js';
 import { saveInterview, summarizeInterview, createRealtimeSession } from './services/api.js';
+import { useRealtimeInterview } from './hooks/useRealtimeInterview.js';
 import {
   buildInterviewerSystemPrompt,
   deriveSessionTitleFromQuestions,
@@ -55,11 +56,8 @@ function InterviewExperience() {
   const jdSummary = useAtomValue(jdSummaryAtom);
 
 
-  const [status, setStatus] = useState('idle'); // idle | connecting | in-progress | complete
-  const [error, setError] = useState('');
   const [summary, setSummary] = useState('');
   const [displayMessages, setDisplayMessages] = useState([]);
-  const [isMicActive, setIsMicActive] = useState(false);
   const [displayMode, setDisplayMode] = useState('equalizer'); // equalizer | transcript
   
   const [selectedInterviewId] = useAtom(selectedInterviewIdAtom);
@@ -70,15 +68,21 @@ function InterviewExperience() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
 
-  const remoteAudioRef = useRef(null);
-  const peerRef = useRef(null);
-  const dataChannelRef = useRef(null);
-  const localStreamRef = useRef(null);
+  const {
+    status,
+    error,
+    isMicActive,
+    remoteAudioRef,
+    remoteStream,
+    dataChannelRef,
+    startInterview,
+    cleanupConnection
+  } = useRealtimeInterview();
+  
   const messageOrderRef = useRef([]);
   const messageMapRef = useRef(new Map());
   const conversationRef = useRef([]);
   const summaryRequestedRef = useRef(false);
-  const instructionsRef = useRef('');
   const statusRef = useRef(status);
   const audioContextRef = useRef(null);
   const remoteVizCanvasRef = useRef(null);
@@ -129,38 +133,15 @@ function InterviewExperience() {
     statusRef.current = status;
   }, [status]);
 
-  const cleanupConnection = useCallback(() => {
-    if (dataChannelRef.current) {
-      try {
-        dataChannelRef.current.close();
-      } catch (_err) {
-        // ignore
-      }
-      dataChannelRef.current = null;
-    }
-
-    if (peerRef.current) {
-      try {
-        peerRef.current.close();
-      } catch (_err) {
-        // ignore
-      }
-      peerRef.current = null;
-    }
-
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-
-    setIsMicActive(false);
-  }, []);
-
   useEffect(() => {
     if (prepMode === 'interview' && interviewSession && status === 'idle') {
-      startRealtimeInterview(interviewSession, interviewStack);
+      const initInterview = async () => {
+        const session = interviewSession || await createRealtimeSession({});
+        await startInterview(session, interviewStack, handleDataChannelMessage);
+      };
+      initInterview();
     }
-  }, [prepMode, interviewSession, interviewStack, status]);
+  }, [prepMode, interviewSession, interviewStack, status, startInterview]);
 
   const commitMessages = useCallback(() => {
     const ordered = messageOrderRef.current
@@ -258,186 +239,6 @@ function InterviewExperience() {
       console.debug('Non-JSON realtime payload', event.data);
     }
   }, [handleRealtimeEvent]);
-
-  const waitForIceGatheringComplete = useCallback(pc => new Promise(resolve => {
-    if (!pc) {
-      resolve();
-      return;
-    }
-
-    if (pc.iceGatheringState === 'complete') {
-      resolve();
-      return;
-    }
-
-    const checkState = () => {
-      if (pc.iceGatheringState === 'complete') {
-        pc.removeEventListener('icegatheringstatechange', checkState);
-        resolve();
-      }
-    };
-
-    pc.addEventListener('icegatheringstatechange', checkState);
-  }), []);
-
-  const initialiseRealtimeSession = useCallback(async (session, stack) => {
-    if (!session) return;
-    if (status === 'connecting' || status === 'in-progress') return;
-    if (!Array.isArray(stack) || stack.length === 0) {
-      setError('Select at least one question to practice.');
-      return;
-    }
-
-    setError('');
-    setSummary('');
-    summaryRequestedRef.current = false;
-    messageOrderRef.current = [];
-    messageMapRef.current = new Map();
-    conversationRef.current = [];
-    commitMessages();
-
-    try {
-      setStatus('connecting');
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Microphone access is not supported in this browser');
-      }
-
-      const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      localStreamRef.current = localStream;
-      setIsMicActive(true);
-
-      const pc = new RTCPeerConnection();
-      peerRef.current = pc;
-
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
-
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-      pc.ontrack = event => {
-        const [remoteStream] = event.streams;
-        if (remoteAudioRef.current && remoteStream) {
-          remoteAudioRef.current.srcObject = remoteStream;
-        }
-        if (remoteStream) {
-          startRemoteVisualizer(remoteStream);
-          const track = event.track;
-          if (track) {
-            track.onended = () => {
-              stopRemoteVisualizer();
-            };
-          }
-        }
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-          cleanupConnection();
-          if (statusRef.current === 'in-progress') {
-            setError('Realtime connection interrupted.');
-            setStatus('idle');
-          }
-        }
-      };
-
-      const dataChannel = pc.createDataChannel('oai-events');
-      dataChannelRef.current = dataChannel;
-      dataChannel.onmessage = handleDataChannelMessage;
-      dataChannel.onclose = () => {
-        if (statusRef.current === 'in-progress' && !summaryRequestedRef.current) {
-          setError('The interviewer disconnected unexpectedly.');
-          setStatus('idle');
-        }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await waitForIceGatheringComplete(pc);
-
-      const baseUrl = session.baseUrl || 'https://api.openai.com/v1/realtime/calls';
-      const model = session.model || 'gpt-4o-realtime-preview-2024-12-17';
-      const localSdp = pc.localDescription?.sdp || offer.sdp;
-
-      if (import.meta.env.DEV) {
-        console.debug('Local SDP preview', localSdp);
-      }
-
-      const sdpResponse = await fetch(`${baseUrl}?model=${encodeURIComponent(model)}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.clientSecret}`,
-          'Content-Type': 'application/sdp'
-        },
-        body: localSdp
-      });
-
-      if (!sdpResponse.ok) {
-        const failureBody = await sdpResponse.text();
-        console.error('Realtime SDP exchange failed', failureBody);
-        let errorMessage = 'Failed to establish realtime session';
-        try {
-          const parsed = JSON.parse(failureBody);
-          errorMessage = parsed?.error?.message || errorMessage;
-        } catch (parseError) {
-          errorMessage = failureBody || errorMessage;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const answer = await sdpResponse.text();
-      await pc.setRemoteDescription({ type: 'answer', sdp: answer });
-
-      dataChannel.onopen = () => {
-        setStatus('in-progress');
-        instructionsRef.current = session.instructions || buildInterviewerSystemPrompt(stack, evaluationFocus, interviewPersona || null);
-        if (instructionsRef.current) {
-          dataChannel.send(
-            JSON.stringify({
-              type: 'session.update',
-              session: { instructions: instructionsRef.current }
-            })
-          );
-        }
-
-        dataChannel.send(
-          JSON.stringify({
-            type: 'conversation.item.create',
-            item: {
-              type: 'message',
-              role: 'user',
-              content: [
-                {
-                  type: 'input_text',
-                  text: 'Begin the interview now.'
-                }
-              ]
-            }
-          })
-        );
-
-        dataChannel.send(JSON.stringify({ type: 'response.create' }));
-      };
-    } catch (err) {
-      console.error(err);
-      setError(err.message || 'Unable to start realtime interview.');
-      cleanupConnection();
-      setStatus('idle');
-      setIsMicActive(false);
-    }
-  }, [cleanupConnection, commitMessages, evaluationFocus, handleDataChannelMessage, interviewPersona, selectedQuestionIds, setError, setIsMicActive, setStatus]);
-
-  const startRealtimeInterview = useCallback(async (sessionPayload, stack) => {
-    try {
-      const payload = sessionPayload || await createRealtimeSession({});
-      await initialiseRealtimeSession(payload, stack);
-    } catch (error) {
-      console.error(error);
-      setError(error?.message || 'Unable to start realtime interview.');
-      cleanupConnection();
-      setStatus('idle');
-      setIsMicActive(false);
-    }
-  }, [cleanupConnection, initialiseRealtimeSession, setError, setIsMicActive, setStatus]);
 
   const fetchSummary = useCallback(async conversation => {
     if (!conversation || conversation.length === 0) {
