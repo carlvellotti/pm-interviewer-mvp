@@ -68,13 +68,32 @@ Entry: `server/index.js` (Express 5, CORS, dotenv, `openai` SDK, SQLite persiste
 
 ## Frontend (interview-bot-test/client)
 
-Entry: `client/src/App.jsx` (React + Vite)
+Entry: `client/src/App.jsx` (React + Vite + Jotai state management)
+
+**Architecture:** As of Sept 2025, the frontend has been refactored from a monolithic 1,428-line `App.jsx` into a modular component/hook architecture (see `docs/specs/app-refactor.md` for full details).
 
 ### Configuration
 - Backend base URL determined at runtime:
-  - If `VITE_API_BASE_URL` is set, it’s used (with trailing slash trimmed).
+  - If `VITE_API_BASE_URL` is set, it's used (with trailing slash trimmed).
   - Otherwise, localhost builds default to `http://localhost:4000`; hosted builds fall back to `/api`.
 - On load, fetches `GET /questions` to populate questions, personas, defaults.
+
+### Component Structure
+- **`App.jsx`** (199 lines) - Root routing between prep/interview/history modes
+- **`Sidebar.jsx`** - Persistent interview history sidebar (always visible)
+- **`PrepWizard.jsx`** - Interview configuration flow
+- **Interview components:**
+  - `InterviewView.jsx` - Live interview UI with audio visualization
+  - `HistoryView.jsx` - Past interview detail viewer
+  - `AudioVisualizer.jsx` - Real-time audio frequency visualization
+  - `QuestionStack.jsx` - Question list display
+  - `SessionDetails.jsx` - Session metadata card
+- **Custom hooks:**
+  - `useInterviewHistory.js` - Interview list loading & detail fetching
+  - `useRealtimeInterview.js` - WebRTC connection lifecycle management
+  - `useInterviewMessages.js` - Real-time message parsing & transcript handling
+- **Services:** `api.js` (REST calls), `webrtc.js` (WebRTC connection logic)
+- **Utils:** `formatters.js` (date/time), `interviewHelpers.js` (prompts, parsing)
 
 ### Realtime voice flow (browser)
 1. User clicks Start → `POST /realtime/session` with `{ questionIds, difficulty }`
@@ -90,17 +109,32 @@ Entry: `client/src/App.jsx` (React + Vite)
 - When the assistant emits `INTERVIEW_COMPLETE`, or the user manually ends the session after some conversation, the app tears down WebRTC, calls `POST /interview/summary`, and persists the session via `/interview/save`.
 
 ### UI states & layout
-- Modes: `idle` → `connecting` → `in-progress` → `complete`
-- Left sidebar (new):
-  - “New Interview” button to return to live mode.
-  - List of saved interviews sorted newest-first (title + timestamp + summary snippet).
-- Main workspace:
-  - Live mode: question/difficulty config + visualization/transcript panel.
-  - History mode: read-only transcript and evaluation sections for the selected interview.
-- Responsive adjustments ensure layout stacks vertically on narrow screens.
+- **App modes:** `prep` → `interview` → `history` (managed via `prepModeAtom`)
+- **Interview status:** `idle` → `connecting` → `in-progress` → `complete`
+- **Persistent sidebar** (`Sidebar.jsx`):
+  - "New Interview" button clears selection and returns to prep mode
+  - List of saved interviews sorted newest-first (title + timestamp + summary snippet)
+  - Highlights currently selected interview when in history mode
+  - Always visible across all modes
+- **Main workspace** (conditional rendering):
+  - **Prep mode:** `PrepWizard` component for configuration
+  - **Interview mode:** `InterviewView` with live audio visualization/transcript panel
+  - **History mode:** `HistoryView` with read-only transcript and evaluation
+- **Responsive:** Layout stacks vertically on narrow screens
+
+### State management (Jotai atoms)
+- **Shared atoms** for sidebar/view synchronization:
+  - `interviewListAtom` - Full interview list
+  - `selectedInterviewIdAtom` - Currently selected interview ID
+  - `selectedInterviewAtom` - Full detail data for selected interview
+- **Prep atoms:** Questions, difficulty, persona, resume, JD summary
+- **Interview atoms:** Session config, question stack, persona settings
 
 ### Live audio visualization
-- Same circular analyser as before; idle state rendered when not in progress.
+- Circular radial frequency bars + center pulse
+- Receives `MediaStream` directly from `useRealtimeInterview` hook
+- Self-contained component with internal AudioContext management
+- Idle/static visualization when not in progress
 
 ---
 
@@ -150,9 +184,23 @@ Folder: `91363a6b-c3c6-44f9-8cf7-3dd5a2323680/`
 ---
 
 ## Pointers to key files
-- Backend (local): `server/index.js`, `server/interviewStore.js`
-- Frontend: `client/src/App.jsx`, `client/src/redesign.css`
-- Serverless API (Vercel production): `api/`
-- Deployment spec: `vercel.json`, `DEPLOYMENT.md`
-- API reference notes: `Realtime API.md`
+
+### Backend
+- Express server: `server/index.js`, `server/interviewStore.js`
+- Serverless API (Vercel production): `api/` (feature-parity with Express)
+
+### Frontend
+- Root: `client/src/App.jsx` (199 lines)
+- Components: `client/src/components/` (Sidebar, PrepWizard, interview views)
+- Hooks: `client/src/hooks/` (useInterviewHistory, useRealtimeInterview, useInterviewMessages)
+- Services: `client/src/services/` (api, webrtc)
+- Utils: `client/src/utils/` (formatters, interviewHelpers)
+- State: `client/src/atoms/prepState.js` (Jotai atoms)
+- Styles: `client/src/redesign.css`
+
+### Documentation
+- Architecture refactor spec: `docs/specs/app-refactor.md`
+- This file: `docs/workings.md`
+- Deployment: `vercel.json`, `DEPLOYMENT.md`
+- API reference: `Realtime API.md`
 
