@@ -318,46 +318,8 @@ export default function PrepWizard() {
   return (
     <div className="prep-wizard">
       <header className="prep-header">
-        <div>
-          <h2>Interview Prep Wizard</h2>
-          <p className="subtle">Curate your question stack, upload context, and start when ready.</p>
-        </div>
-        <div className="persona-settings">
-          <label>
-            Persona
-            <select
-              value={reviewSettings.persona}
-              onChange={event =>
-                setReviewSettings(prev => ({
-                  ...prev,
-                  persona: event.target.value
-                }))
-              }
-            >
-              {personaOptions.map(option => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Difficulty
-            <select
-              value={reviewSettings.difficulty}
-              onChange={event =>
-                setReviewSettings(prev => ({
-                  ...prev,
-                  difficulty: event.target.value
-                }))
-              }
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </label>
-        </div>
+        <h2>Interview Prep Wizard</h2>
+        <p className="subtle">Curate your question stack, upload context, and start when ready.</p>
       </header>
 
       <div className="prep-content">
@@ -522,6 +484,10 @@ export default function PrepWizard() {
                 <strong>{totalSelectedQuestions}</strong>
               </div>
               <div>
+                <span className="label">Est. Duration</span>
+                <strong>{estimatedDurationLabel}</strong>
+              </div>
+              <div>
                 <span className="label">JD summary</span>
                 <strong>{jdSummary ? 'Included' : 'Not provided'}</strong>
               </div>
@@ -531,29 +497,34 @@ export default function PrepWizard() {
               </div>
             </div>
           </section>
+          <section className="card">
+            <div className="card-header">
+              <h3>Interview Settings</h3>
+            </div>
+            <div className="card-body interview-settings">
+              <label>
+                <span className="label">Difficulty</span>
+                <select
+                  value={reviewSettings.difficulty}
+                  onChange={event =>
+                    setReviewSettings(prev => ({
+                      ...prev,
+                      difficulty: event.target.value
+                    }))
+                  }
+                >
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+              <button type="button" className="primary big-button" onClick={handleStartInterview} disabled={isSubmitting || selectedQuestions.length === 0}>
+                {isSubmitting ? 'Starting…' : 'Start Interview'}
+              </button>
+            </div>
+          </section>
         </aside>
       </div>
-
-      <footer className="prep-footer">
-        <div className="summary">
-          <div>
-            <span className="label">Questions</span>
-            <strong>{totalSelectedQuestions}</strong>
-          </div>
-          <div>
-            <span className="label">Estimated duration</span>
-            <strong>{estimatedDurationLabel}</strong>
-          </div>
-        </div>
-        <div className="actions">
-          <button type="button" className="secondary" disabled>
-            Save for later
-          </button>
-          <button type="button" className="primary" onClick={handleStartInterview} disabled={isSubmitting || selectedQuestions.length === 0}>
-            {isSubmitting ? 'Starting…' : 'Start Interview'}
-          </button>
-        </div>
-      </footer>
 
       {prepError && prepError.trim().length > 0 && (
         <div className="banner error fixed-bottom">{prepError}</div>

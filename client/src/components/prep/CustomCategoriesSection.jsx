@@ -9,6 +9,7 @@ function CustomCategoriesSection({
   onDelete
 }) {
   const [isDialogOpen, setDialogOpen] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftQuestions, setDraftQuestions] = useState(['']);
   const [actionState, setActionState] = useState({ status: 'idle', error: '' });
@@ -16,11 +17,20 @@ function CustomCategoriesSection({
   const resetDraft = () => {
     setDraftTitle('');
     setDraftQuestions(['']);
+    setEditingCategoryId(null);
     setActionState({ status: 'idle', error: '' });
   };
 
   const openDialog = () => {
     resetDraft();
+    setDialogOpen(true);
+  };
+
+  const openEditDialog = (categoryId, category) => {
+    setEditingCategoryId(categoryId);
+    setDraftTitle(category.title || '');
+    setDraftQuestions(category.questions?.map(q => q.text || '') || ['']);
+    setActionState({ status: 'idle', error: '' });
     setDialogOpen(true);
   };
 
@@ -60,7 +70,11 @@ function CustomCategoriesSection({
 
     try {
       setActionState({ status: 'saving', error: '' });
-      await onCreate({ title: draftTitle.trim(), questions });
+      if (editingCategoryId) {
+        await onUpdate(editingCategoryId, { title: draftTitle.trim(), questions });
+      } else {
+        await onCreate({ title: draftTitle.trim(), questions });
+      }
       closeDialog();
     } catch (error) {
       setActionState({ status: 'error', error: error?.message || 'Failed to save category.' });
@@ -70,8 +84,10 @@ function CustomCategoriesSection({
   return (
     <section className="card">
       <div className="card-header">
-        <h3>Custom Categories</h3>
-        <p className="subtle">Create your own prompts to reuse in future sessions.</p>
+        <div>
+          <h3>Custom Categories</h3>
+          <p className="subtle">Create your own prompts to reuse in future sessions.</p>
+        </div>
         <button type="button" className="tone-button" onClick={openDialog}>
           New Category
         </button>
@@ -83,7 +99,7 @@ function CustomCategoriesSection({
               <div className="custom-category-header">
                 <strong>{category.title}</strong>
                 <div className="actions">
-                  <button type="button" className="link-button" onClick={() => onUpdate(category.id, category)}>
+                  <button type="button" className="link-button" onClick={() => openEditDialog(category.id, category)}>
                     Edit
                   </button>
                   <button type="button" className="link-button danger" onClick={() => onDelete(category.id)}>
@@ -118,7 +134,7 @@ function CustomCategoriesSection({
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <form className="modal" onSubmit={handleSubmit}>
             <header>
-              <h4>Create Custom Category</h4>
+              <h4>{editingCategoryId ? 'Edit Category' : 'Create Custom Category'}</h4>
               <button type="button" className="icon-button" onClick={closeDialog} aria-label="Close">
                 ×
               </button>
@@ -161,7 +177,7 @@ function CustomCategoriesSection({
                 Cancel
               </button>
               <button type="submit" className="primary" disabled={actionState.status === 'saving'}>
-                {actionState.status === 'saving' ? 'Saving…' : 'Save Category'}
+                {actionState.status === 'saving' ? 'Saving…' : editingCategoryId ? 'Update Category' : 'Save Category'}
               </button>
             </footer>
           </form>

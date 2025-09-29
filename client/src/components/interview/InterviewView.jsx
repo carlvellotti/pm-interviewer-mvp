@@ -40,65 +40,58 @@ export default function InterviewView({
       <header className="workspace-header">
         <div className="header-text">
           <h2>New Interview</h2>
-          <p className="subtle">Configure questions and start when ready</p>
-        </div>
-        <div className="persona-chip">
-          {reviewSettings.persona ? reviewSettings.persona : 'Medium'}
+          <p className="subtle">Your interview is live</p>
         </div>
       </header>
 
       {error && <div className="banner error">{error}</div>}
 
-      <div className="live-layout">
-        <section className="live-stage">
-          <div className="panel">
-            <div className="panel-header">
-              {status === 'in-progress' ? (
-                <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
-                  <span className="dot" />
-                  <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
-                </div>
-              ) : (
-                <div></div>
-              )}
-              <button
-                type="button"
-                className="toggle-button"
-                onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
-              >
-                Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
-              </button>
-            </div>
-
-            {displayMode === 'transcript' ? (
-              <div className={`transcript-view ${status === 'in-progress' ? 'active' : ''}`}>
-                {displayMessages.length === 0 ? (
-                  <span className="placeholder subtle">Transcript will appear here once the interview starts…</span>
-                ) : (
-                  <pre>
-                    {displayMessages
-                      .map(m => `${m.role === 'assistant' ? 'Interviewer' : 'You'}: ${m.text}`)
-                      .join('\n\n')}
-                    {status === 'in-progress' ? '▋' : ''}
-                  </pre>
-                )}
+      <section className="live-stage-full">
+        <div className="panel">
+          <div className="panel-header">
+            {status === 'in-progress' ? (
+              <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
+                <span className="dot" />
+                <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
               </div>
             ) : (
-              <AudioVisualizer remoteStream={remoteStream} status={status} />
+              <div></div>
             )}
+            <button
+              type="button"
+              className="toggle-button"
+              onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
+            >
+              Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
+            </button>
           </div>
-        </section>
 
-        <aside className="live-sidebar">
-          <QuestionStack questions={interviewStack} />
-          <SessionDetails
-            persona={interviewPersona}
-            personaFallback={reviewSettings.persona}
-            difficulty={reviewSettings.difficulty}
-            resumeFilename={interviewResume?.filename || resumeState.filename}
-            jdSummary={jdSummary}
-          />
-        </aside>
+          {displayMode === 'transcript' ? (
+            <div className={`transcript-view ${status === 'in-progress' ? 'active' : ''}`}>
+              {displayMessages.length === 0 ? (
+                <span className="placeholder subtle">Transcript will appear here once the interview starts…</span>
+              ) : (
+                <pre>
+                  {displayMessages
+                    .map(m => `${m.role === 'assistant' ? 'Interviewer' : 'You'}: ${m.text}`)
+                    .join('\n\n')}
+                  {status === 'in-progress' ? '▋' : ''}
+                </pre>
+              )}
+            </div>
+          ) : (
+            <AudioVisualizer remoteStream={remoteStream} status={status} />
+          )}
+        </div>
+      </section>
+
+      <div className="live-details-grid">
+        <SessionDetails
+          difficulty={reviewSettings.difficulty}
+          resumeFilename={interviewResume?.filename || resumeState.filename}
+          jdSummary={jdSummary}
+        />
+        <QuestionStack questions={interviewStack} />
       </div>
 
       {summary && (

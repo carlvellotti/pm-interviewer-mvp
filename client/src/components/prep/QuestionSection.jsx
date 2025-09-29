@@ -4,8 +4,10 @@ function QuestionSection({ title, subtitle, questions, selectedQuestionIds, onTo
   return (
     <section className="card">
       <div className="card-header">
-        <h3>{title}</h3>
-        {subtitle && <p className="subtle">{subtitle}</p>}
+        <div>
+          <h3>{title}</h3>
+          {subtitle && <p className="subtle">{subtitle}</p>}
+        </div>
       </div>
       <div className="card-body question-list">
         {Array.isArray(questions) && questions.length > 0 ? (
