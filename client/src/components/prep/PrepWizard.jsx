@@ -555,7 +555,9 @@ export default function PrepWizard() {
         </div>
       </footer>
 
-      {prepError && <div className="banner error fixed-bottom">{prepError}</div>}
+      {prepError && prepError.trim().length > 0 && (
+        <div className="banner error fixed-bottom">{prepError}</div>
+      )}
     </div>
   );
 }

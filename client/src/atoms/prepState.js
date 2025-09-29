@@ -65,3 +65,8 @@ export const interviewResumeAtom = atom(null);
 export const prepLoadedAtom = atom(false);
 
 
+export const selectedInterviewIdAtom = atom(null);
+export const selectedInterviewAtom = atom(null);
+export const interviewListAtom = atom([]);
+
+
