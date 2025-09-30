@@ -1067,29 +1067,41 @@
 /* Category Accordion Styles */
 .category-accordion {
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .category-accordion-item {
-  border-bottom: 1px solid #e5e7eb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  transition: all 0.2s ease;
 }
 
-.category-accordion-item:last-child {
-  border-bottom: none;
+.category-accordion-item:hover {
+  border-color: #c7d2fe;
+  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.1);
+}
+
+.category-accordion-item.expanded {
+  border-color: #6366f1;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
 }
 
 .category-accordion-trigger {
   appearance: none;
   border: none;
-  background: transparent;
+  background: #ffffff;
   width: 100%;
   padding: 1.25rem 1.5rem;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 .category-accordion-trigger:hover {
-  background: rgba(99, 102, 241, 0.04);
+  background: rgba(99, 102, 241, 0.03);
 }
 
 .category-accordion-item.expanded .category-accordion-trigger {
@@ -1110,26 +1122,33 @@
 
 .category-accordion-title strong {
   display: block;
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: #111827;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.375rem;
+  letter-spacing: -0.01em;
+}
+
+.category-accordion-item.expanded .category-accordion-title strong {
+  color: #4f46e5;
 }
 
 .category-accordion-title .subtle {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
   color: #6b7280;
 }
 
 .category-accordion-chevron {
   flex-shrink: 0;
   color: #9ca3af;
-  transition: transform 0.2s ease;
+  transition: all 0.2s ease;
 }
 
 .category-accordion-item.expanded .category-accordion-chevron {
   transform: rotate(180deg);
+  color: #6366f1;
 }
 
 .category-accordion-content {

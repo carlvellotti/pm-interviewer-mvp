@@ -169,16 +169,23 @@ export default function PrepWizard() {
     [setSelectedQuestionIds]
   );
 
-  // NEW: Handle category selection
+  // NEW: Handle category selection (toggle accordion)
   const handleCategorySelect = useCallback(
     categoryId => {
-      // When switching categories, clear question selections
-      if (selectedCategoryId !== categoryId) {
-        setSelectedQuestionIds([]);
+      if (selectedCategoryId === categoryId) {
+        // Collapsing: deselect all questions from this category
+        const category = interviewCategories.find(c => c.id === categoryId);
+        if (category) {
+          const categoryQuestionIds = category.questions.map(q => q.id);
+          setSelectedQuestionIds(prev => prev.filter(id => !categoryQuestionIds.includes(id)));
+        }
+        setSelectedCategoryId(null);
+      } else {
+        // Expanding: clear selections from other categories
+        setSelectedCategoryId(categoryId);
       }
-      setSelectedCategoryId(categoryId);
     },
-    [selectedCategoryId, setSelectedCategoryId, setSelectedQuestionIds]
+    [selectedCategoryId, interviewCategories, setSelectedCategoryId, setSelectedQuestionIds]
   );
 
   const handleCustomCategoryCreate = useCallback(
