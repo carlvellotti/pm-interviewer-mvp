@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import {
   interviewQuestionStackAtom,
@@ -25,7 +25,6 @@ export default function InterviewView({
   onReset
 }) {
   const [displayMode, setDisplayMode] = useState('equalizer'); // equalizer | transcript
-  const prevStatusRef = useRef(status);
   
   const interviewStack = useAtomValue(interviewQuestionStackAtom);
   const interviewPersona = useAtomValue(interviewPersonaAtom);
@@ -36,16 +35,61 @@ export default function InterviewView({
   
   const coaching = useMemo(() => parseCoachingSummary(summary), [summary]);
 
-  // Scroll to bottom when interview ends
-  useEffect(() => {
-    if (prevStatusRef.current === 'in-progress' && status !== 'in-progress') {
-      setTimeout(() => {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-      }, 300);
-    }
-    prevStatusRef.current = status;
-  }, [status]);
+  // If we have a summary, show only the summary (interview has ended)
+  if (summary) {
+    return (
+      <>
+        <header className="workspace-header interview-header">
+          <div className="header-text">
+            <h2>Interview Complete</h2>
+            <p className="subtle">Review your performance below</p>
+          </div>
+        </header>
 
+        <section className="summary">
+          <h3>Coaching Advice</h3>
+          <div>
+            {coaching ? (
+              <>
+                {coaching.summary && (
+                  <div className="summary-block">
+                    <h4>Summary</h4>
+                    <p>{coaching.summary}</p>
+                  </div>
+                )}
+                {coaching.strengths.length > 0 && (
+                  <div className="summary-block">
+                    <h4>Strengths</h4>
+                    <ul>
+                      {coaching.strengths.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {coaching.improvements.length > 0 && (
+                  <div className="summary-block">
+                    <h4>Improvements</h4>
+                    <ul>
+                      {coaching.improvements.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : (
+              <pre>{summary}</pre>
+            )}
+          </div>
+        </section>
+
+        <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only" />
+      </>
+    );
+  }
+
+  // Otherwise, show the live interview UI
   return (
     <>
       <header className="workspace-header interview-header">
@@ -116,46 +160,6 @@ export default function InterviewView({
         />
         <QuestionStack questions={interviewStack} />
       </div>
-
-      {summary && (
-        <section className="summary">
-          <h3>Coaching Advice</h3>
-          <div>
-            {coaching ? (
-              <>
-                {coaching.summary && (
-                  <div className="summary-block">
-                    <h4>Summary</h4>
-                    <p>{coaching.summary}</p>
-                  </div>
-                )}
-                {coaching.strengths.length > 0 && (
-                  <div className="summary-block">
-                    <h4>Strengths</h4>
-                    <ul>
-                      {coaching.strengths.map((item, index) => (
-                        <li key={index}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {coaching.improvements.length > 0 && (
-                  <div className="summary-block">
-                    <h4>Improvements</h4>
-                    <ul>
-                      {coaching.improvements.map((item, index) => (
-                        <li key={index}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            ) : (
-              <pre>{summary}</pre>
-            )}
-          </div>
-        </section>
-      )}
 
       <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only" />
     </>
