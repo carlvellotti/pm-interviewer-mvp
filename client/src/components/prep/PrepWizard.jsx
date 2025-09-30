@@ -761,10 +761,6 @@ export default function PrepWizard() {
                 <span className="label">Est. Duration</span>
                 <strong>{estimatedDurationLabel}</strong>
               </div>
-              <div>
-                <span className="label">JD summary</span>
-                <strong>{jdSummary ? 'Included' : 'Not provided'}</strong>
-              </div>
             </div>
             
             {/* Review Stack integrated into Prep Summary */}
@@ -799,10 +795,11 @@ export default function PrepWizard() {
                       difficulty: event.target.value
                     }))
                   }
+                  className="styled-select"
                 >
-                  <option value="easy">Easy</option>
-                  <option value="medium">Medium</option>
-                  <option value="hard">Hard</option>
+                  <option value="easy">Easy - Supportive and encouraging</option>
+                  <option value="medium">Medium - Realistic with follow-ups</option>
+                  <option value="hard">Hard - Challenging and rigorous</option>
                 </select>
               </label>
               <button type="button" className="primary big-button" onClick={handleStartInterview} disabled={isSubmitting || selectedQuestions.length === 0}>
