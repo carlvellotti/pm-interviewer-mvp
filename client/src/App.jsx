@@ -30,7 +30,7 @@ import './redesign.css';
 
 function InterviewExperience() {
   const prepMode = useAtomValue(prepModeAtom);
-  const interviewSession = useAtomValue(interviewSessionAtom);
+  const [interviewSession, setInterviewSession] = useAtom(interviewSessionAtom);
   const interviewStack = useAtomValue(interviewQuestionStackAtom);
   const selectedQuestions = useAtomValue(selectedQuestionsAtom);
   const selectedQuestionIds = useAtomValue(selectedQuestionIdsAtom);
@@ -57,7 +57,7 @@ function InterviewExperience() {
     cleanupConnection
   } = useRealtimeInterview();
   
-  const isViewingHistory = prepMode === 'history' && selectedInterviewId !== null && selectedInterview !== null;
+  const isViewingHistory = prepMode === 'history' && selectedInterviewId !== null;
 
   const fetchSummary = useCallback(async conversation => {
     if (!conversation || conversation.length === 0) {
@@ -145,13 +145,15 @@ function InterviewExperience() {
     if (!forceDiscard && hasConversation) {
       fetchSummary(conversationRef.current);
       cleanupConnection();
+      setInterviewSession(null); // Clear session to prevent auto-restart
       return;
     }
 
     cleanupConnection();
+    setInterviewSession(null); // Clear session to prevent auto-restart
     setSummary('');
     resetMessages();
-  }, [cleanupConnection, fetchSummary, resetMessages]);
+  }, [cleanupConnection, fetchSummary, resetMessages, setInterviewSession]);
 
   if (isViewingHistory) {
     return (
@@ -171,7 +173,7 @@ function InterviewExperience() {
       remoteStream={remoteStream}
       displayMessages={displayMessages}
       summary={summary}
-      onReset={() => resetInterview({ forceDiscard: true })}
+      onReset={() => resetInterview()}
     />
   );
 }
@@ -187,7 +189,7 @@ export default function App() {
       </div>
     );
   }
-  
+
   return (
     <div className="app-shell">
       <Sidebar />

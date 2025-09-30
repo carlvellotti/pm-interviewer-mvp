@@ -1,5 +1,11 @@
 {
   "installCommand": "npm install && cd client && npm install",
   "buildCommand": "cd client && npm run build",
-  "outputDirectory": "client/dist"
+  "outputDirectory": "client/dist",
+  "routes": [
+    {
+      "src": "/api/interview/history/(?<id>[^/]+)",
+      "dest": "/api/interview/history?id=$id"
+    }
+  ]
 }

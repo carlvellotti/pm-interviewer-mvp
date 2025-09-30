@@ -175,8 +175,14 @@ If you use the Vite dev server, set `VITE_API_BASE_URL=http://localhost:4000` in
   - `api/health.js` → `/api/health`
   - `api/categories/index.js` → `/api/categories`
   - `api/categories/[id].js` → `/api/categories/:id` (dynamic route)
-  - `api/interview/history/index.js` → `/api/interview/history`
+  - `api/interview/history.js` → handles both `/api/interview/history` AND `/api/interview/history/:id` (via routes config)
   - etc.
+- **Dynamic Route Handling:**
+  - **Preferred approach:** Single flat file + `routes` config in `vercel.json`
+  - **Why:** Directory-based dynamic routes (`[id].js`) are unreliable in `vercel dev`
+  - **Pattern:** Use `routes` array to transform path params → query params
+  - **Example:** `/api/interview/history/:id` → `/api/interview/history?id=:id`
+  - See `docs/DEBUG-history-route-404.md` for detailed explanation
 - **Database:** SQLite stored in `/tmp` (ephemeral, cleared periodically)
   - Acceptable for demo/MVP use case
   - Upgrade to Vercel Postgres/KV for persistence if needed
@@ -187,6 +193,9 @@ If you use the Vite dev server, set `VITE_API_BASE_URL=http://localhost:4000` in
   - Installs root + client dependencies
   - Builds React app to `client/dist`
   - Auto-detects and deploys `api/` functions
+  - **IMPORTANT:** Use `routes` (not `rewrites`) for API transformations
+    - `rewrites` = client-side SPA routing
+    - `routes` = server-side API transformations
 
 ---
 

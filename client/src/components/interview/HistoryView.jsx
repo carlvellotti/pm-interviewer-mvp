@@ -45,10 +45,39 @@ export default function HistoryView({ onReturnToLive, summary }) {
   }, [detailEvaluation]);
   
   const detailTranscript = selectedInterview?.transcript ?? [];
-  
-  const isViewingHistory = prepMode === 'history' && selectedInterviewId !== null && selectedInterview !== null;
 
-  if (!isViewingHistory) {
+  // Show loading state if we're in history mode but data hasn't loaded yet
+  if (detailLoading) {
+    return (
+      <>
+        <header className="workspace-header">
+          <div className="header-text">
+            <h2>Loading...</h2>
+            <p className="subtle">Fetching interview details</p>
+          </div>
+        </header>
+        <div className="spinner" style={{ margin: '2rem auto' }}>Loading interview...</div>
+      </>
+    );
+  }
+
+  // Show error state
+  if (detailError) {
+    return (
+      <>
+        <header className="workspace-header">
+          <div className="header-text">
+            <h2>Error</h2>
+            <p className="subtle">{detailError}</p>
+          </div>
+        </header>
+        <div className="banner error">{detailError}</div>
+      </>
+    );
+  }
+
+  // If no interview loaded, don't render
+  if (!selectedInterview) {
     return null;
   }
 

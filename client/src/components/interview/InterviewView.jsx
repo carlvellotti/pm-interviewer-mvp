@@ -42,6 +42,15 @@ export default function InterviewView({
           <h2>New Interview</h2>
           <p className="subtle">Your interview is live</p>
         </div>
+        {status === 'in-progress' && (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={onReset}
+          >
+            End Interview
+          </button>
+        )}
       </header>
 
       {error && <div className="banner error">{error}</div>}

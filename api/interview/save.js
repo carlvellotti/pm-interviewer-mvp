@@ -21,8 +21,8 @@ export default async function handler(req, res) {
         resumeFilename,
         jdSummary,
         questionStack,
-        transcript,
-        evaluation: summary,
+        transcript: transcript || [],
+        evaluation: summary || { summary: 'No evaluation provided', strengths: [], improvements: [] },
         metadata: { persona, difficulty, resumeFilename, jdSummary, questionStack }
       });
 
