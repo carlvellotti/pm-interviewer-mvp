@@ -46,43 +46,69 @@ export default function InterviewView({
 
       {summary ? (
         // Show summary when interview is complete
-        <section className="summary">
-          <h3>Coaching Advice</h3>
-          <div>
-            {coaching ? (
-              <>
-                {coaching.summary && (
-                  <div className="summary-block">
-                    <h4>Summary</h4>
-                    <p>{coaching.summary}</p>
-                  </div>
-                )}
-                {coaching.strengths.length > 0 && (
-                  <div className="summary-block">
-                    <h4>Strengths</h4>
-                    <ul>
-                      {coaching.strengths.map((item, index) => (
-                        <li key={index}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {coaching.improvements.length > 0 && (
-                  <div className="summary-block">
-                    <h4>Improvements</h4>
-                    <ul>
-                      {coaching.improvements.map((item, index) => (
-                        <li key={index}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
+        <>
+          <section className="summary">
+            <h3>Coaching Advice</h3>
+            <div>
+              {coaching ? (
+                <>
+                  {coaching.summary && (
+                    <div className="summary-block">
+                      <h4>Summary</h4>
+                      <p>{coaching.summary}</p>
+                    </div>
+                  )}
+                  {coaching.strengths.length > 0 && (
+                    <div className="summary-block">
+                      <h4>Strengths</h4>
+                      <ul>
+                        {coaching.strengths.map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {coaching.improvements.length > 0 && (
+                    <div className="summary-block">
+                      <h4>Improvements</h4>
+                      <ul>
+                        {coaching.improvements.map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <pre>{summary}</pre>
+              )}
+            </div>
+          </section>
+
+          <section className="history-section">
+            <h3>Transcript</h3>
+            {displayMessages.length === 0 ? (
+              <div className="history-placeholder">
+                <div style={{ fontSize: '2rem', marginBottom: '0.5rem', opacity: 0.3 }}>💬</div>
+                <div>No transcript available</div>
+              </div>
             ) : (
-              <pre>{summary}</pre>
+              <div className="history-transcript">
+                {displayMessages.map((entry, index) => {
+                  const role = entry.role || 'unknown';
+                  const label = role === 'assistant' ? 'Interviewer' : role === 'user' ? 'You' : role;
+                  const text = entry.text || '';
+                  return (
+                    <div className="history-turn" key={index}>
+                      <div className="turn-role">{label}</div>
+                      <div className="turn-text">{text || '—'}</div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-          </div>
-        </section>
+          </section>
+        </>
       ) : (
         // Show live interview UI
         <>
