@@ -20,7 +20,12 @@ function QuestionSection({ title, subtitle, questions, selectedQuestionIds, onTo
               <label key={id} className={`question-item ${isSelected ? 'selected' : ''}`}>
                 <input type="checkbox" checked={isSelected} onChange={() => onToggle(id)} />
                 <div>
-                  <strong>{prompt}</strong>
+                  <strong>
+                    {prompt}
+                    {question.estimatedDuration && (
+                      <span className="duration-badge"> ({question.estimatedDuration} min)</span>
+                    )}
+                  </strong>
                   {description && <p className="subtle">{description}</p>}
                 </div>
               </label>

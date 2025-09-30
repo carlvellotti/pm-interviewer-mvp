@@ -21,7 +21,11 @@ import {
   interviewSessionAtom,
   interviewQuestionStackAtom,
   interviewPersonaAtom,
-  interviewResumeAtom
+  interviewResumeAtom,
+  // NEW: Category atoms
+  interviewCategoriesAtom,
+  selectedCategoryIdAtom,
+  selectedCategoryAtom
 } from '../../atoms/prepState.js';
 import {
   fetchConfiguration,
@@ -69,22 +73,33 @@ export default function PrepWizard() {
   const jdTextRef = useRef('');
   const [jdText, setJdText] = useState('');
 
+  // NEW: Category state
+  const [interviewCategories, setInterviewCategories] = useAtom(interviewCategoriesAtom);
+  const [selectedCategoryId, setSelectedCategoryId] = useAtom(selectedCategoryIdAtom);
+  const selectedCategory = useAtomValue(selectedCategoryAtom);
+
   const loadInitialConfiguration = useCallback(async () => {
     try {
       setPrepError('');
 
       const config = await fetchConfiguration();
       const {
-        questions = [],
+        categories: interviewCats = [],  // NEW: Interview categories
+        questions = [],                  // OLD: Seed questions (backward compatible)
         evaluationFocus: focusAreas = [],
         personas = [],
         defaults = {}
       } = config || {};
 
+      const safeInterviewCats = ensureArray(interviewCats);
       const safeQuestions = ensureArray(questions);
       const safePersonas = ensureArray(personas);
       const safeFocusAreas = ensureArray(focusAreas);
 
+      // NEW: Set interview categories
+      setInterviewCategories(safeInterviewCats);
+      
+      // OLD: Keep for backward compatibility
       setQuestionOptions(safeQuestions);
       setEvaluationFocus(safeFocusAreas);
       setPersonaOptions(safePersonas.map(persona => ({
@@ -129,6 +144,7 @@ export default function PrepWizard() {
   }, [
     setCustomCategories,
     setEvaluationFocus,
+    setInterviewCategories,  // NEW: Added for categories
     setJdGeneratedQuestions,
     setJdSummary,
     setJdUploadState,
@@ -151,6 +167,18 @@ export default function PrepWizard() {
       setSelectedQuestionIds(prev => (prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]));
     },
     [setSelectedQuestionIds]
+  );
+
+  // NEW: Handle category selection
+  const handleCategorySelect = useCallback(
+    categoryId => {
+      // When switching categories, clear question selections
+      if (selectedCategoryId !== categoryId) {
+        setSelectedQuestionIds([]);
+      }
+      setSelectedCategoryId(categoryId);
+    },
+    [selectedCategoryId, setSelectedCategoryId, setSelectedQuestionIds]
   );
 
   const handleCustomCategoryCreate = useCallback(
@@ -339,13 +367,42 @@ export default function PrepWizard() {
 
             <Tabs.Content className="TabsContent tab-categories" value="categories" data-mobile-title="Categories" forceMount>
               <div className="categories-tab">
-                <QuestionSection
-                  title="Seed Categories"
-                  subtitle="Select from curated prompts."
-                  questions={questionOptions}
-                  selectedQuestionIds={selectedQuestionIds}
-                  onToggle={handleToggleQuestion}
-                />
+                {/* NEW: Category selector */}
+                <section className="card">
+                  <div className="card-header">
+                    <h3>Select Interview Type</h3>
+                    <p className="subtle">Choose one interview category</p>
+                  </div>
+                  <div className="card-body category-selector">
+                    {interviewCategories.map(category => (
+                      <label key={category.id} className="category-option">
+                        <input
+                          type="radio"
+                          name="category"
+                          checked={selectedCategoryId === category.id}
+                          onChange={() => handleCategorySelect(category.id)}
+                        />
+                        <div className="category-content">
+                          <strong>{category.name}</strong>
+                          <p className="subtle">{category.description}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+
+                {/* NEW: Questions appear when category selected */}
+                {selectedCategory && (
+                  <QuestionSection
+                    title={`${selectedCategory.name} Questions`}
+                    subtitle="Select questions for your interview"
+                    questions={selectedCategory.questions}
+                    selectedQuestionIds={selectedQuestionIds}
+                    onToggle={handleToggleQuestion}
+                  />
+                )}
+
+                {/* KEEP: Custom categories */}
                 <CustomCategoriesSection
                   categories={customCategories}
                   selectedQuestionIds={selectedQuestionIds}
