@@ -8,7 +8,6 @@ import {
   selectedQuestionIdsAtom,
   evaluationFocusAtom,
   reviewSettingsAtom,
-  resumeUploadAtom,
   jdSummaryAtom,
   selectedInterviewAtom,
   selectedInterviewIdAtom,
@@ -36,7 +35,6 @@ function InterviewExperience() {
   const selectedQuestionIds = useAtomValue(selectedQuestionIdsAtom);
   const evaluationFocus = useAtomValue(evaluationFocusAtom);
   const reviewSettings = useAtomValue(reviewSettingsAtom);
-  const resumeState = useAtomValue(resumeUploadAtom);
   const jdSummary = useAtomValue(jdSummaryAtom);
 
 
@@ -88,7 +86,6 @@ function InterviewExperience() {
         })),
         evaluationFocus,
         savedAt: new Date().toISOString(),
-        resume: resumeState,
         jdSummary
       };
 
@@ -120,7 +117,7 @@ function InterviewExperience() {
       console.error(err);
       setSummary('Unable to generate summary right now.');
     }
-  }, [evaluationFocus, jdSummary, reviewSettings.difficulty, reviewSettings.persona, resumeState, selectedQuestionIds, selectedQuestions, setInterviewList]);
+  }, [evaluationFocus, jdSummary, reviewSettings.difficulty, reviewSettings.persona, selectedQuestionIds, selectedQuestions, setInterviewList]);
 
   const {
     displayMessages,

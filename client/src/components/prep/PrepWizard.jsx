@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
-import * as Tabs from '@radix-ui/react-tabs';
 import {
   prepModeAtom,
   prepLoadedAtom,
@@ -12,7 +11,6 @@ import {
   personaOptionsAtom,
   reviewSettingsAtom,
   evaluationFocusAtom,
-  resumeUploadAtom,
   jdUploadAtom,
   jdSummaryAtom,
   prepErrorAtom,
@@ -21,7 +19,6 @@ import {
   interviewSessionAtom,
   interviewQuestionStackAtom,
   interviewPersonaAtom,
-  interviewResumeAtom,
   // NEW: Category atoms
   interviewCategoriesAtom,
   selectedCategoryIdAtom,
@@ -37,8 +34,6 @@ import {
   startInterviewSession
 } from '../../services/api.js';
 import QuestionSection from './QuestionSection.jsx';
-import CustomCategoriesSection from './CustomCategoriesSection.jsx';
-import ResumeUploader from './ResumeUploader.jsx';
 
 function ensureArray(value) {
   return Array.isArray(value) ? value : [];
@@ -59,7 +54,6 @@ export default function PrepWizard() {
   const [reviewSettings, setReviewSettings] = useAtom(reviewSettingsAtom);
   const setEvaluationFocus = useSetAtom(evaluationFocusAtom);
 
-  const resumeState = useAtomValue(resumeUploadAtom);
   const [jdUploadState, setJdUploadState] = useAtom(jdUploadAtom);
   const [jdSummary, setJdSummary] = useAtom(jdSummaryAtom);
   const [prepError, setPrepError] = useAtom(prepErrorAtom);
@@ -69,7 +63,6 @@ export default function PrepWizard() {
   const setInterviewSession = useSetAtom(interviewSessionAtom);
   const setInterviewStack = useSetAtom(interviewQuestionStackAtom);
   const setInterviewPersona = useSetAtom(interviewPersonaAtom);
-  const setInterviewResume = useSetAtom(interviewResumeAtom);
   const jdTextRef = useRef('');
   const [jdText, setJdText] = useState('');
 
@@ -77,6 +70,16 @@ export default function PrepWizard() {
   const [interviewCategories, setInterviewCategories] = useAtom(interviewCategoriesAtom);
   const [selectedCategoryId, setSelectedCategoryId] = useAtom(selectedCategoryIdAtom);
   const selectedCategory = useAtomValue(selectedCategoryAtom);
+
+  // Local state for section expansion
+  const [jdSectionExpanded, setJdSectionExpanded] = useState(false);
+  
+  // Custom category dialog state
+  const [isCustomDialogOpen, setCustomDialogOpen] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftQuestions, setDraftQuestions] = useState(['']);
+  const [customActionState, setCustomActionState] = useState({ status: 'idle', error: '' });
 
   const loadInitialConfiguration = useCallback(async () => {
     try {
@@ -122,12 +125,8 @@ export default function PrepWizard() {
           'medium'
       }));
 
-      if (Array.isArray(defaults.questionIds) && defaults.questionIds.length > 0) {
-        setSelectedQuestionIds(defaults.questionIds);
-      } else {
-        const fallbackIds = safeQuestions.slice(0, 3).map(question => question.id).filter(Boolean);
-        setSelectedQuestionIds(fallbackIds);
-      }
+      // No default questions - user must manually select
+      setSelectedQuestionIds([]);
 
       setJdGeneratedQuestions([]);
       setJdUploadState({ status: 'idle', error: '', promptSummary: '', generatedCategories: [] });
@@ -211,16 +210,89 @@ export default function PrepWizard() {
 
   const handleCustomCategoryDelete = useCallback(
     async id => {
-      await deleteCustomCategory(id);
-      const removed = customCategories.find(category => category.id === id);
-      setCustomCategories(prev => prev.filter(category => category.id !== id));
-      if (removed && Array.isArray(removed.questions)) {
-        const removedIds = new Set(removed.questions.map(question => question.id));
-        setSelectedQuestionIds(prev => prev.filter(questionId => !removedIds.has(questionId)));
+      try {
+        await deleteCustomCategory(id);
+        const removed = customCategories.find(category => category.id === id);
+        setCustomCategories(prev => prev.filter(category => category.id !== id));
+        if (removed && Array.isArray(removed.questions)) {
+          const removedIds = new Set(removed.questions.map(question => question.id));
+          setSelectedQuestionIds(prev => prev.filter(questionId => !removedIds.has(questionId)));
+        }
+      } catch (error) {
+        console.error('Failed to delete category', error);
+        setPrepError(error?.message || 'Unable to delete category.');
       }
     },
-    [customCategories, setCustomCategories, setSelectedQuestionIds]
+    [customCategories, setCustomCategories, setSelectedQuestionIds, setPrepError]
   );
+
+  // Custom category dialog handlers
+  const resetCustomDraft = useCallback(() => {
+    setDraftTitle('');
+    setDraftQuestions(['']);
+    setEditingCategoryId(null);
+    setCustomActionState({ status: 'idle', error: '' });
+  }, []);
+
+  const openCustomDialog = useCallback(() => {
+    resetCustomDraft();
+    setCustomDialogOpen(true);
+  }, [resetCustomDraft]);
+
+  const openEditCustomDialog = useCallback((categoryId, category) => {
+    setEditingCategoryId(categoryId);
+    setDraftTitle(category.title || '');
+    setDraftQuestions(category.questions?.map(q => q.text || '') || ['']);
+    setCustomActionState({ status: 'idle', error: '' });
+    setCustomDialogOpen(true);
+  }, []);
+
+  const closeCustomDialog = useCallback(() => {
+    setCustomDialogOpen(false);
+    resetCustomDraft();
+  }, [resetCustomDraft]);
+
+  const addQuestionField = useCallback(() => {
+    setDraftQuestions(prev => [...prev, '']);
+  }, []);
+
+  const updateQuestionField = useCallback((index, value) => {
+    setDraftQuestions(prev => prev.map((item, idx) => (idx === index ? value : item)));
+  }, []);
+
+  const removeQuestionField = useCallback(index => {
+    setDraftQuestions(prev => prev.filter((_, idx) => idx !== index));
+  }, []);
+
+  const handleCustomSubmit = useCallback(async (event) => {
+    event.preventDefault();
+    if (!draftTitle.trim()) {
+      setCustomActionState({ status: 'error', error: 'Category title is required.' });
+      return;
+    }
+
+    const questions = draftQuestions
+      .map(text => text.trim())
+      .filter(Boolean)
+      .map(text => ({ text }));
+
+    if (questions.length === 0) {
+      setCustomActionState({ status: 'error', error: 'Add at least one question.' });
+      return;
+    }
+
+    try {
+      setCustomActionState({ status: 'saving', error: '' });
+      if (editingCategoryId) {
+        await handleCustomCategoryUpdate(editingCategoryId, { title: draftTitle.trim(), questions });
+      } else {
+        await handleCustomCategoryCreate({ title: draftTitle.trim(), questions });
+      }
+      closeCustomDialog();
+    } catch (error) {
+      setCustomActionState({ status: 'error', error: error?.message || 'Failed to save category.' });
+    }
+  }, [draftTitle, draftQuestions, editingCategoryId, handleCustomCategoryCreate, handleCustomCategoryUpdate, closeCustomDialog]);
 
   const handleJDUpload = useCallback(
     async jobDescription => {
@@ -249,6 +321,7 @@ export default function PrepWizard() {
         setJdSummary(result?.promptSummary || '');
         setJdText('');
         jdTextRef.current = '';
+        // Keep JD section expanded to show generated questions
       } catch (error) {
         console.error('JD upload failed', error);
         setJdUploadState({
@@ -273,7 +346,6 @@ export default function PrepWizard() {
       <QuestionSection
         key={category.title}
         title={category.title}
-        subtitle="Generated from your job description"
         questions={category.questions}
         selectedQuestionIds={selectedQuestionIds}
         onToggle={handleToggleQuestion}
@@ -301,7 +373,6 @@ export default function PrepWizard() {
         })),
         persona: { id: reviewSettings.persona },
         difficulty: reviewSettings.difficulty,
-        resumeRef: resumeState.resumeRef || null,
         jdSummary: jdSummary || jdUploadState.promptSummary || ''
       };
 
@@ -310,7 +381,6 @@ export default function PrepWizard() {
       setInterviewSession(response.session);
       setInterviewStack(response.questionStack || []);
       setInterviewPersona(response.persona || null);
-      setInterviewResume(response.resume || null);
       setJdSummary(response.jdSummary || '');
       setPrepMode('interview');
     } catch (error) {
@@ -322,12 +392,10 @@ export default function PrepWizard() {
   }, [
     jdSummary,
     jdUploadState.promptSummary,
-    resumeState.resumeRef,
     reviewSettings.difficulty,
     reviewSettings.persona,
     selectedQuestions,
     setInterviewPersona,
-    setInterviewResume,
     setInterviewSession,
     setInterviewStack,
     setIsSubmitting,
@@ -358,29 +426,17 @@ export default function PrepWizard() {
       </header>
 
       <div className="prep-content">
-        <div className="prep-tabs">
-          <Tabs.Root className="TabsRoot" defaultValue="categories">
-            <Tabs.List className="TabsList" aria-label="Prep modes">
-              <Tabs.Trigger className="TabsTrigger" value="categories">
-                Categories
-              </Tabs.Trigger>
-              <Tabs.Trigger className="TabsTrigger" value="upload">
-                Upload JD
-              </Tabs.Trigger>
-              <Tabs.Trigger className="TabsTrigger" value="review">
-                Review Stack
-              </Tabs.Trigger>
-            </Tabs.List>
-
-            <Tabs.Content className="TabsContent tab-categories" value="categories" data-mobile-title="Categories" forceMount>
-              <div className="categories-tab">
-                {/* NEW: Accordion-style category selector */}
-                <section className="card">
-                  <div className="card-header">
-                    <h3>Select Interview Type</h3>
-                    <p className="subtle">Choose one category and select questions</p>
-                  </div>
-                  <div className="card-body category-accordion">
+        <div className="prep-main-flow">
+          <section className="card">
+            <div className="card-header">
+              <h3>Select Interview Type</h3>
+              <p className="subtle">Choose from curated categories, generate from a job description, or create your own</p>
+            </div>
+            <div className="card-body">
+              {/* Section 1: Curated Interview Types */}
+              <div className="interview-type-section">
+                <h4 className="section-title">Curated Interview Types</h4>
+                <div className="category-accordion">
                     {interviewCategories.map(category => {
                       const isExpanded = selectedCategoryId === category.id;
                       return (
@@ -445,138 +501,253 @@ export default function PrepWizard() {
                         </div>
                       );
                     })}
-                  </div>
-                </section>
-
-                {/* KEEP: Custom categories */}
-                <CustomCategoriesSection
-                  categories={customCategories}
-                  selectedQuestionIds={selectedQuestionIds}
-                  onToggle={handleToggleQuestion}
-                  onCreate={handleCustomCategoryCreate}
-                  onUpdate={handleCustomCategoryUpdate}
-                  onDelete={handleCustomCategoryDelete}
-                />
-                {jdSelectionSections && jdSelectionSections.length > 0 && (
-                  <section className="card">
-                    <div className="card-header">
-                      <h3>Job Description Suggestions</h3>
-                      <p className="subtle">Add AI-generated prompts to your stack.</p>
-                    </div>
-                    <div className="card-body merged-question-sections">{jdSelectionSections}</div>
-                  </section>
-                )}
+                </div>
               </div>
-            </Tabs.Content>
 
-            <Tabs.Content className="TabsContent tab-upload" value="upload" data-mobile-title="Upload Job Description" forceMount>
-              <section className="card">
-                <div className="card-header">
-                  <h3>Job Description Paste</h3>
-                  <p className="subtle">Paste a job description to generate tailored prompts.</p>
-                </div>
-                <div className="card-body">
-                  <label className="textarea-label">
-                    <span className="textarea-title">Job Description Text</span>
-                    <textarea
-                      className="jd-textarea"
-                      rows={12}
-                      placeholder="Paste the job description here..."
-                      disabled={jdUploadState.status === 'uploading'}
-                      onChange={event => {
-                        jdTextRef.current = event.target.value;
-                        setJdText(event.target.value);
-                        if (jdUploadState.error) {
-                          setJdUploadState(prev => ({ ...prev, error: '' }));
-                        }
-                      }}
-                      value={jdText}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={() => {
-                      const text = jdTextRef.current.trim();
-                      if (!text) {
-                        setJdUploadState(prev => ({ ...prev, error: 'Paste a job description before generating.' }));
-                        return;
-                      }
-                      setJdUploadState(prev => ({ ...prev, error: '' }));
-                      handleJDUpload(text);
-                    }}
-                    disabled={jdUploadState.status === 'uploading'}
-                  >
-                    {jdUploadState.status === 'uploading' ? 'Generating…' : 'Generate Questions'}
-                  </button>
-                  {jdUploadState.error && <div className="error">{jdUploadState.error}</div>}
-                  {jdUploadState.status === 'success' && jdUploadState.generatedCategories.length > 0 && (
-                    <div className="generated-results">
-                      <strong>Generated categories</strong>
-                      <p className="subtle">Switch to the Categories tab to add these prompts.</p>
-                      <ul>
-                        {jdUploadState.generatedCategories.map(category => (
-                          <li key={category.title}>
-                            {category.title} ({category.questions.length})
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {jdUploadState.status === 'success' && jdUploadState.generatedCategories.length === 0 && (
-                    <div className="generated-results subtle">No questions generated. Try another file.</div>
-                  )}
-                </div>
-              </section>
-            </Tabs.Content>
-
-            <Tabs.Content className="TabsContent tab-review" value="review" data-mobile-title="Review Question Stack" forceMount>
-              <section className="card">
-                <div className="card-header">
-                  <h3>Review Question Stack</h3>
-                  <p className="subtle">Remove questions before starting.</p>
-                </div>
-                <div className="card-body review-list">
-                  {selectedQuestions.length === 0 ? (
-                    <div className="empty-state subtle">No questions selected yet.</div>
-                  ) : (
-                    selectedQuestions.map(question => (
-                      <div key={question.id} className="review-item">
-                        <div>
-                          <strong>{question.prompt || question.text}</strong>
-                          {question.source && <span className="tag source">{question.source}</span>}
-                          {question.categoryId && <span className="tag category">{question.categoryId}</span>}
+              {/* Section 2: Job Description Based */}
+              <div className="interview-type-section">
+                <h4 className="section-title">Job Description Based</h4>
+                <div className="category-accordion">
+                  <div className={`category-accordion-item ${jdSectionExpanded ? 'expanded' : ''}`}>
+                    <button
+                      className="category-accordion-trigger"
+                      onClick={() => setJdSectionExpanded(!jdSectionExpanded)}
+                      type="button"
+                    >
+                      <div className="category-accordion-header">
+                        <div className="category-accordion-title">
+                          <strong>Generate Questions from Job Description</strong>
+                          <p className="subtle">Paste a job description to create tailored interview questions</p>
                         </div>
-                        <button type="button" className="link-button danger" onClick={() => handleToggleQuestion(question.id)}>
-                          Remove
-                        </button>
+                        <svg
+                          className="category-accordion-chevron"
+                          width="20"
+                          height="20"
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M5 7.5L10 12.5L15 7.5"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
                       </div>
-                    ))
-                  )}
-                </div>
-                {(jdSummary || resumeState.filename) && (
-                  <div className="card-footer">
-                    {jdSummary && (
-                      <div className="summary-block">
-                        <strong>JD Summary</strong>
-                        <p>{jdSummary}</p>
-                      </div>
-                    )}
-                    {resumeState.filename && (
-                      <div className="summary-block">
-                        <strong>Resume Attached</strong>
-                        <p>{resumeState.filename}</p>
+                    </button>
+                    
+                    {jdSectionExpanded && (
+                      <div className="category-accordion-content">
+                        <div className="jd-upload-area">
+                          {/* Only show input area when not successfully generated */}
+                          {jdUploadState.status !== 'success' && (
+                            <>
+                              <label className="textarea-label">
+                                <span className="textarea-title">Job Description Text</span>
+                                <textarea
+                                  className="jd-textarea"
+                                  rows={12}
+                                  placeholder="Paste the job description here..."
+                                  disabled={jdUploadState.status === 'uploading'}
+                                  onChange={event => {
+                                    jdTextRef.current = event.target.value;
+                                    setJdText(event.target.value);
+                                    if (jdUploadState.error) {
+                                      setJdUploadState(prev => ({ ...prev, error: '' }));
+                                    }
+                                  }}
+                                  value={jdText}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="primary"
+                                onClick={() => {
+                                  const text = jdTextRef.current.trim();
+                                  if (!text) {
+                                    setJdUploadState(prev => ({ ...prev, error: 'Paste a job description before generating.' }));
+                                    return;
+                                  }
+                                  setJdUploadState(prev => ({ ...prev, error: '' }));
+                                  handleJDUpload(text);
+                                }}
+                                disabled={jdUploadState.status === 'uploading'}
+                              >
+                                {jdUploadState.status === 'uploading' ? 'Generating…' : 'Generate Questions'}
+                              </button>
+                              {jdUploadState.error && <div className="error">{jdUploadState.error}</div>}
+                            </>
+                          )}
+                          
+                          {/* Generated questions appear below */}
+                          {jdUploadState.status === 'success' && jdUploadState.generatedCategories.length > 0 && (
+                            <div className="generated-questions-wrapper">
+                              <div className="generated-header">
+                                <strong>Generated Questions</strong>
+                                <p className="subtle">Select questions to add to your interview stack</p>
+                              </div>
+                              {jdSelectionSections}
+                            </div>
+                          )}
+                          {jdUploadState.status === 'success' && jdUploadState.generatedCategories.length === 0 && (
+                            <div className="empty-state subtle">No questions generated. Try another description.</div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
-                )}
-              </section>
-            </Tabs.Content>
-          </Tabs.Root>
+                </div>
+              </div>
+
+              {/* Section 3: Custom Categories */}
+              <div className="interview-type-section">
+                <h4 className="section-title">Custom Categories</h4>
+                <div className="category-accordion">
+                  {customCategories.map(category => {
+                    const categoryQuestionIds = category.questions?.map(q => q.id) || [];
+                    const hasSelectedQuestions = categoryQuestionIds.some(id => selectedQuestionIds.includes(id));
+                    const isExpanded = selectedCategoryId === `custom-${category.id}`;
+                    return (
+                      <div key={category.id} className={`category-accordion-item ${isExpanded ? 'expanded' : ''}`}>
+                        <div className="custom-category-wrapper">
+                          <button
+                            className="category-accordion-trigger"
+                            onClick={() => {
+                              // Toggle expansion for this custom category
+                              if (isExpanded) {
+                                setSelectedCategoryId(null);
+                              } else {
+                                setSelectedCategoryId(`custom-${category.id}`);
+                              }
+                            }}
+                            type="button"
+                          >
+                            <div className="category-accordion-header">
+                              <div className="category-accordion-title">
+                                <strong>{category.title}</strong>
+                                <p className="subtle">{category.questions?.length || 0} questions</p>
+                              </div>
+                              <div className="custom-category-actions">
+                                <button
+                                  type="button"
+                                  className="icon-action-button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditCustomDialog(category.id, category);
+                                  }}
+                                  title="Edit"
+                                >
+                                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M11.3333 2.00004C11.5084 1.82494 11.716 1.68605 11.9441 1.59129C12.1722 1.49653 12.4165 1.44775 12.6633 1.44775C12.9101 1.44775 13.1544 1.49653 13.3825 1.59129C13.6106 1.68605 13.8183 1.82494 13.9933 2.00004C14.1684 2.17513 14.3073 2.38282 14.402 2.61091C14.4968 2.83899 14.5456 3.08333 14.5456 3.33004C14.5456 3.57675 14.4968 3.82108 14.402 4.04917C14.3073 4.27725 14.1684 4.48494 13.9933 4.66004L5.00001 13.6534L1.33334 14.6667L2.34668 11L11.3333 2.00004Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="icon-action-button danger"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`Delete category "${category.title}"?`)) {
+                                      handleCustomCategoryDelete(category.id);
+                                    }
+                                  }}
+                                  title="Delete"
+                                >
+                                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M2 4H3.33333H14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M5.33334 4.00004V2.66671C5.33334 2.31309 5.47381 1.97395 5.72386 1.7239C5.97391 1.47385 6.31305 1.33337 6.66668 1.33337H9.33334C9.68696 1.33337 10.0261 1.47385 10.2762 1.7239C10.5262 1.97395 10.6667 2.31309 10.6667 2.66671V4.00004M12.6667 4.00004V13.3334C12.6667 13.687 12.5262 14.0261 12.2762 14.2762C12.0261 14.5262 11.687 14.6667 11.3333 14.6667H4.66668C4.31305 14.6667 3.97391 14.5262 3.72386 14.2762C3.47381 14.0261 3.33334 13.687 3.33334 13.3334V4.00004H12.6667Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                </button>
+                                <svg
+                                  className="category-accordion-chevron"
+                                  width="20"
+                                  height="20"
+                                  viewBox="0 0 20 20"
+                                  fill="none"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                >
+                                  <path
+                                    d="M5 7.5L10 12.5L15 7.5"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              </div>
+                            </div>
+                          </button>
+                          
+                          {isExpanded && (
+                            <div className="category-accordion-content">
+                              <div className="question-list">
+                                {category.questions?.map(question => {
+                                  const isSelected = selectedQuestionIds.includes(question.id);
+                                  return (
+                                    <label
+                                      key={question.id}
+                                      className={`question-item ${isSelected ? 'selected' : ''}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => handleToggleQuestion(question.id)}
+                                      />
+                                      <div>
+                                        <strong>{question.text || question.prompt}</strong>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Empty state for creating new custom category */}
+                  <div className="category-accordion-item empty-state-item">
+                    <button
+                      className="category-accordion-trigger"
+                      onClick={openCustomDialog}
+                      type="button"
+                    >
+                      <div className="category-accordion-header">
+                        <div className="category-accordion-title">
+                          <strong>
+                            <svg
+                              className="plus-icon"
+                              width="20"
+                              height="20"
+                              viewBox="0 0 20 20"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                              style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }}
+                            >
+                              <path
+                                d="M10 5V15M5 10H15"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                            Create Custom Category
+                          </strong>
+                          <p className="subtle">Add your own interview questions</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
 
         <aside className="prep-sidebar">
-          <ResumeUploader />
           <section className="card">
             <div className="card-header">
               <h3>Prep Summary</h3>
@@ -594,11 +765,24 @@ export default function PrepWizard() {
                 <span className="label">JD summary</span>
                 <strong>{jdSummary ? 'Included' : 'Not provided'}</strong>
               </div>
-              <div>
-                <span className="label">Resume</span>
-                <strong>{resumeState.filename ? resumeState.filename : 'Not attached'}</strong>
-              </div>
             </div>
+            
+            {/* Review Stack integrated into Prep Summary */}
+            {selectedQuestions.length > 0 && (
+              <div className="card-body review-stack-section">
+                <div className="review-stack-header">
+                  <span className="review-stack-label">Question Stack</span>
+                </div>
+                <div className="review-stack-list">
+                  {selectedQuestions.map((question, index) => (
+                    <div key={question.id} className="review-stack-item">
+                      <span className="question-number">{index + 1}.</span>
+                      <span className="question-text">{question.prompt || question.text}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
           <section className="card">
             <div className="card-header">
@@ -631,6 +815,61 @@ export default function PrepWizard() {
 
       {prepError && prepError.trim().length > 0 && (
         <div className="banner error fixed-bottom">{prepError}</div>
+      )}
+
+      {/* Custom Category Creation/Edit Modal */}
+      {isCustomDialogOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <form className="modal" onSubmit={handleCustomSubmit}>
+            <header>
+              <h4>{editingCategoryId ? 'Edit Category' : 'Create Custom Category'}</h4>
+              <button type="button" className="icon-button" onClick={closeCustomDialog} aria-label="Close">
+                ×
+              </button>
+            </header>
+            <div className="modal-body">
+              <label>
+                Category Title
+                <input
+                  type="text"
+                  value={draftTitle}
+                  onChange={event => setDraftTitle(event.target.value)}
+                  placeholder="e.g. Growth Metrics"
+                />
+              </label>
+              <div className="question-fields">
+                <strong>Questions</strong>
+                {draftQuestions.map((value, index) => (
+                  <div key={index} className="question-field">
+                    <input
+                      type="text"
+                      value={value}
+                      onChange={event => updateQuestionField(index, event.target.value)}
+                      placeholder="Enter question"
+                    />
+                    {draftQuestions.length > 1 && (
+                      <button type="button" className="icon-button" onClick={() => removeQuestionField(index)} aria-label="Remove question">
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button type="button" className="link-button" onClick={addQuestionField}>
+                  + Add another question
+                </button>
+              </div>
+              {customActionState.error && <div className="error">{customActionState.error}</div>}
+            </div>
+            <footer className="modal-footer">
+              <button type="button" className="secondary" onClick={closeCustomDialog} disabled={customActionState.status === 'saving'}>
+                Cancel
+              </button>
+              <button type="submit" className="primary" disabled={customActionState.status === 'saving'}>
+                {customActionState.status === 'saving' ? 'Saving…' : editingCategoryId ? 'Update Category' : 'Save Category'}
+              </button>
+            </footer>
+          </form>
+        </div>
       )}
     </div>
   );

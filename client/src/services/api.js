@@ -76,26 +76,6 @@ export async function deleteCustomCategory(id) {
   return true;
 }
 
-export async function uploadResume(file) {
-  const formData = new FormData();
-  formData.append('resume', file);
-  const response = await fetch(`${API_BASE_URL}/interview/resume`, {
-    method: 'POST',
-    body: formData
-  });
-  return handleResponse(response);
-}
-
-export async function deleteResume(resumeRef) {
-  const response = await fetch(`${API_BASE_URL}/interview/resume/${resumeRef}`, {
-    method: 'DELETE'
-  });
-  if (!response.ok && response.status !== 204) {
-    await handleResponse(response);
-  }
-  return true;
-}
-
 export async function uploadJobDescription(payload) {
   const response = await fetch(`${API_BASE_URL}/interview/jd`, {
     method: 'POST',

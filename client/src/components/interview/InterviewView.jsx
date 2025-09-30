@@ -3,9 +3,7 @@ import { useAtomValue } from 'jotai';
 import {
   interviewQuestionStackAtom,
   interviewPersonaAtom,
-  interviewResumeAtom,
   reviewSettingsAtom,
-  resumeUploadAtom,
   jdSummaryAtom
 } from '../../atoms/prepState.js';
 import { formatLabel } from '../../utils/formatters.js';
@@ -28,9 +26,7 @@ export default function InterviewView({
   
   const interviewStack = useAtomValue(interviewQuestionStackAtom);
   const interviewPersona = useAtomValue(interviewPersonaAtom);
-  const interviewResume = useAtomValue(interviewResumeAtom);
   const reviewSettings = useAtomValue(reviewSettingsAtom);
-  const resumeState = useAtomValue(resumeUploadAtom);
   const jdSummary = useAtomValue(jdSummaryAtom);
   
   const coaching = useMemo(() => parseCoachingSummary(summary), [summary]);
@@ -168,7 +164,6 @@ export default function InterviewView({
       <div className="live-details-grid">
         <SessionDetails
           difficulty={reviewSettings.difficulty}
-          resumeFilename={interviewResume?.filename || resumeState.filename}
           jdSummary={jdSummary}
         />
         <QuestionStack questions={interviewStack} />

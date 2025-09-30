@@ -37,43 +37,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-const RESUME_SIZE_LIMIT_BYTES = 5 * 1024 * 1024; // 5 MB
-const ALLOWED_RESUME_MIME_TYPES = new Set([
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'text/plain'
-]);
-const ALLOWED_RESUME_EXTENSIONS = new Set(['.pdf', '.doc', '.docx', '.txt']);
 const USER_PLACEHOLDER_ID = 'local';
-
-const tempStorageRoot = path.join(os.tmpdir(), 'interview-prep');
-fs.mkdirSync(tempStorageRoot, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, tempStorageRoot);
-  },
-  filename: (_req, file, cb) => {
-    const uniqueId = crypto.randomUUID();
-    const ext = path.extname(file.originalname || '').toLowerCase();
-    cb(null, `${uniqueId}${ext}`);
-  }
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: RESUME_SIZE_LIMIT_BYTES },
-  fileFilter: (_req, file, cb) => {
-    const mimetype = (file.mimetype || '').toLowerCase();
-    const ext = path.extname(file.originalname || '').toLowerCase();
-    if (ALLOWED_RESUME_MIME_TYPES.has(mimetype) || ALLOWED_RESUME_EXTENSIONS.has(ext)) {
-      cb(null, true);
-    } else {
-      cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'resume'));
-    }
-  }
-});
 
 const questionBank = [
   {
@@ -289,19 +253,8 @@ function buildPrepQuestions(questionStack) {
     .filter(Boolean);
 }
 
-function enrichSystemPromptWithContext(basePrompt, { resumeText, resumeFilename, jdSummary }) {
+function enrichSystemPromptWithContext(basePrompt, { jdSummary }) {
   const sections = [basePrompt];
-
-  if (resumeText) {
-    sections.push(
-      '',
-      'Candidate resume excerpt (confidential – reference naturally, do not quote verbatim or repeat sensitive data):',
-      resumeText
-    );
-    if (resumeFilename) {
-      sections.push('', `Resume filename: ${resumeFilename}`);
-    }
-  }
 
   if (jdSummary) {
     sections.push(
@@ -581,55 +534,23 @@ app.delete('/interview/resume/:id', async (req, res) => {
 
 async function callJDGPT(promptPayload, attempt = 1) {
   try {
-    const response = await openai.responses.parse({
-      model: 'gpt-5-mini',
-      input: promptPayload,
-      json_schema: {
-        name: 'JDGenerationResponse',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            promptSummary: {
-              type: 'string'
-            },
-            categories: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  title: { type: 'string' },
-                  questions: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      additionalProperties: false,
-                      properties: {
-                        id: { type: 'string' },
-                        text: { type: 'string' },
-                        rationale: { type: 'string' }
-                      },
-                      required: ['text']
-                    },
-                    minItems: 1
-                  }
-                },
-                required: ['title', 'questions']
-              },
-              minItems: 1
-            }
-          },
-          required: ['categories']
-        }
-      }
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: promptPayload,
+      response_format: { type: 'json_object' },
+      temperature: 0.7
     });
 
-    const output = response?.output?.[0];
-    const parsed = output?.parsed;
-    if (!parsed) {
+    const content = completion.choices?.[0]?.message?.content;
+    if (!content) {
       throw new Error('Empty JD generation response');
     }
+
+    const parsed = JSON.parse(content);
+    if (!parsed || !parsed.categories) {
+      throw new Error('Invalid JD generation response format');
+    }
+    
     return parsed;
   } catch (error) {
     if (attempt < 2) {

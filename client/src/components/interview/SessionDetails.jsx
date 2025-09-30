@@ -1,6 +1,6 @@
 import { formatLabel } from '../../utils/formatters.js';
 
-export default function SessionDetails({ difficulty, resumeFilename, jdSummary }) {
+export default function SessionDetails({ difficulty, jdSummary }) {
   return (
     <section className="card">
       <div className="card-header">
@@ -12,10 +12,6 @@ export default function SessionDetails({ difficulty, resumeFilename, jdSummary }
         <div className="session-detail-item">
           <span className="label">Difficulty</span>
           <strong>{formatLabel(difficulty)}</strong>
-        </div>
-        <div className="session-detail-item">
-          <span className="label">Resume</span>
-          <strong>{resumeFilename || 'Not attached'}</strong>
         </div>
         <div className="session-detail-item">
           <span className="label">JD summary</span>

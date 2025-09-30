@@ -2,6 +2,19 @@
 
 This document summarizes how the two projects in this workspace are structured and how they work together, with a focus on the realtime interview flow.
 
+## Recent Updates (September 2025)
+
+**Interview Categories System**: Major refactor from free-form question selection to category-first approach:
+- **5 structured interview categories** with 60 curated PM questions
+- **Rich AI guidance** per category (pacing, probing, evaluation signals)
+- **Category-first UI** with accordion-style selection (expand one category at a time)
+- **Inline duration display** for each question (5-15 min) with total calculation
+- **Backward-compatible API** supporting both new (categoryId + questionIds) and old (questionStack) formats
+- **CSS Design System** with variables and utility classes for consistent theming
+- **Bug fixes**: Interview auto-restart issue, evaluation saving to history
+
+See `docs/specs_completed/interview-categories.md` and `docs/initial_question_bank.md` for full details.
+
 ## Projects
 
 - **Full‑stack prototype** in `interview-bot-test/`
@@ -43,20 +56,40 @@ Entry: `server/index.js` (Express 5, CORS, dotenv, `openai` SDK, SQLite persiste
 - Listens on `PORT` (default `4000`)
 
 ### Interview content
-- In-memory `questionBank` with 6 behavioral prompts
-- `evaluationFocus`: brief coaching criteria
+- **Interview Categories System** (Sept 2025): 5 structured categories with 60 curated questions
+  - **Behavioral**: 12 STAR-based questions (avg 8.3 min each)
+  - **Execution / Delivery**: 12 project management questions (avg 6.2 min each)
+  - **Metrics / Analytics**: 12 data-driven questions (avg 5.9 min each)
+  - **Product Sense / Design**: 12 exploratory design questions (avg 13.8 min each)
+  - **Strategy / Market**: 12 strategic thinking questions (avg 7.5 min each)
+- Each category includes rich AI guidance:
+  - `systemStyle`: Interviewer persona and tone
+  - `questionApproach`: How to ask and probe
+  - `pacing`: Timing guidelines for each question type
+  - `probeFor`: Key areas to dig into
+  - `avoid`: Anti-patterns to avoid
+  - `evaluationSignals`: Strong vs weak answer indicators
+- Question types: `rigid` (ask verbatim) or `exploratory` (collaborative problem-solving)
 - `personas`: `easy`, `medium`, `hard` with voices, tone instructions, and turn-detection overrides
 
 ### Key endpoints
 - `GET /health` – status check
-- `GET /questions` – `{ questions, evaluationFocus, personas, defaults }`
-- `POST /interview/start` – seeds messages and gets an initial interviewer reply
-- `POST /interview/respond` – continues the conversation
+- `GET /questions` – returns interview configuration
+  - **NEW format**: `{ categories, personas }` where categories is array of 5 interview types with questions
+  - **OLD format**: Still includes `{ questions, evaluationFocus, defaults }` for backward compatibility
+- `POST /interview/start-session` – creates OpenAI Realtime session
+  - **NEW format**: `{ categoryId, questionIds, difficulty, resumeRef }`
+  - **OLD format**: `{ questionStack, difficulty, resumeRef, jdSummary }` still supported
+  - Uses category-specific AI guidance to build rich system prompts
+  - Returns: `{ session, questionStack, categoryId, categoryName, estimatedDuration, persona }`
 - `POST /interview/summary` – produces coaching JSON from the transcript
 - `POST /interview/save` – persists transcript, evaluation, metadata to SQLite
+  - Accepts both `evaluation` (new) and `summary` (old) fields
 - `GET /interview/history` – returns interview summaries ordered newest-first
 - `GET /interview/history/:id` – loads full transcript/evaluation payload
-- `POST /realtime/session` – creates a Realtime client secret for the browser
+- `POST /interview/jd` – processes job description and generates questions
+- `POST /interview/resume` – uploads resume for context
+- `GET /categories` – custom user categories (CRUD endpoints at `/categories/:id`)
 
 ### SQLite repository
 - File lives at `data/interviews.db` (plus WAL files) created automatically.
@@ -86,12 +119,22 @@ Entry: `client/src/App.jsx` (React + Vite + Jotai state management)
 - **`App.jsx`** (199 lines) - Root routing between prep/interview/history modes
 - **`Sidebar.jsx`** - Persistent interview history sidebar (always visible)
 - **`PrepWizard.jsx`** - Interview configuration flow
+  - **Category-first approach** (Sept 2025): Accordion-style UI with 5 interview types
+  - User selects ONE category → questions expand inline
+  - Click to collapse → deselects all questions in that category
+  - Shows per-question durations (e.g., "8 min")
+  - Calculates total estimated duration in review stack
+  - Keeps existing tabs: Upload JD, Custom Categories, Review Stack
 - **Interview components:**
   - `InterviewView.jsx` - Live interview UI with audio visualization
   - `HistoryView.jsx` - Past interview detail viewer
   - `AudioVisualizer.jsx` - Real-time audio frequency visualization
   - `QuestionStack.jsx` - Question list display
   - `SessionDetails.jsx` - Session metadata card
+- **Prep components:**
+  - `QuestionSection.jsx` - Reusable question list with checkboxes (shows durations)
+  - `CustomCategoriesSection.jsx` - User-created question categories
+  - `ResumeUploader.jsx` - Resume upload and management
 - **Custom hooks:**
   - `useInterviewHistory.js` - Interview list loading & detail fetching
   - `useRealtimeInterview.js` - WebRTC connection lifecycle management
@@ -100,13 +143,20 @@ Entry: `client/src/App.jsx` (React + Vite + Jotai state management)
 - **Utils:** `formatters.js` (date/time), `interviewHelpers.js` (prompts, parsing)
 
 ### Realtime voice flow (browser)
-1. User clicks Start → `POST /realtime/session` with `{ questionIds, difficulty }`
-2. Backend responds with session instructions, model, client secret
+1. User clicks Start → `POST /interview/start-session` with:
+   - **NEW format**: `{ categoryId, questionIds, difficulty, resumeRef }`
+   - **OLD format**: `{ questionStack, difficulty, resumeRef, jdSummary }` (still works)
+2. Backend builds rich system prompt using category AI guidance and responds with:
+   - `session` (with clientSecret, expiresAt, model, instructions)
+   - `questionStack` (questions to cover)
+   - `categoryId`, `categoryName` (NEW)
+   - `estimatedDuration` (NEW, calculated from selected questions)
+   - `persona` (difficulty settings)
 3. Browser gets mic access with `navigator.mediaDevices.getUserMedia`
 4. Creates an `RTCPeerConnection` + `oai-events` data channel
 5. Sends SDP offer to OpenAI Realtime endpoint with `Authorization: Bearer <clientSecret>`
 6. Applies answer, data channel opens
-7. Sends `session.update` with instructions, then conversation seed “Begin the interview now.” + `response.create`
+7. Sends `session.update` with instructions, then conversation seed "Begin the interview now." + `response.create`
 
 ### Event handling
 - Same as before: absorbs message/transcription events and renders conversation.
@@ -131,7 +181,18 @@ Entry: `client/src/App.jsx` (React + Vite + Jotai state management)
   - `interviewListAtom` - Full interview list
   - `selectedInterviewIdAtom` - Currently selected interview ID
   - `selectedInterviewAtom` - Full detail data for selected interview
-- **Prep atoms:** Questions, difficulty, persona, resume, JD summary
+- **Prep atoms:** 
+  - **Category atoms (NEW Sept 2025):**
+    - `interviewCategoriesAtom` - 5 interview categories loaded from API
+    - `selectedCategoryIdAtom` - Currently expanded category
+    - `selectedCategoryAtom` - Derived: full category object with questions
+  - `selectedQuestionIdsAtom` - Array of selected question IDs
+  - `selectedQuestionsAtom` - Derived: full question objects (category-aware)
+  - `prepSummaryAtom` - Derived: total questions + estimated duration
+  - `reviewSettingsAtom` - Difficulty and persona selections
+  - `resumeUploadAtom` - Resume file state
+  - `jdUploadAtom` - Job description state and generated questions
+  - `customCategoriesAtom` - User-created question categories
 - **Interview atoms:** Session config, question stack, persona settings
 
 ### Live audio visualization
@@ -139,6 +200,25 @@ Entry: `client/src/App.jsx` (React + Vite + Jotai state management)
 - Receives `MediaStream` directly from `useRealtimeInterview` hook
 - Self-contained component with internal AudioContext management
 - Idle/static visualization when not in progress
+
+### CSS Design System (Sept 2025)
+- **CSS Variables** in `redesign.css` for consistent theming:
+  - Backgrounds: `--bg-card-primary`, `--bg-card-hover`, `--bg-card-active`
+  - Borders: `--border-default`, `--border-hover`, `--border-active`
+  - Text: `--text-primary`, `--text-secondary`, `--text-accent`
+  - Accents: `--accent-primary`, `--accent-gradient`
+  - Spacing: `--spacing-xs` through `--spacing-xl`
+  - Shadows: `--shadow-sm`, `--shadow-md`, `--shadow-lg`
+  - Border radius: `--radius-sm`, `--radius-md`, `--radius-lg`
+- **Utility Classes** for common patterns:
+  - Text: `.text-primary`, `.text-secondary`, `.text-accent`
+  - Backgrounds: `.bg-card`, `.bg-elevated`
+  - Borders: `.border-default`, `.border-active`
+  - Spacing: `.p-sm`, `.gap-md`, `.p-lg`
+  - Shadows: `.shadow-sm`, `.shadow-lg`
+- **Dark theme** with purple/indigo accents throughout
+- All components use design tokens for consistency
+- Single source of truth for theme updates
 
 ---
 
@@ -225,7 +305,10 @@ Folder: `91363a6b-c3c6-44f9-8cf7-3dd5a2323680/`
 - Styles: `client/src/redesign.css`
 
 ### Documentation
-- Architecture refactor spec: `docs/specs/app-refactor.md`
+- Architecture refactor spec: `docs/specs_completed/app-refactor.md`
+- Interview categories spec: `docs/specs_completed/interview-categories.md` (Sept 2025)
+- Interview history sidebar: `docs/specs_completed/interview-history-sidebar.md`
+- Initial question bank research: `docs/initial_question_bank.md` (60 questions across 5 categories)
 - Vercel deployment patterns: `docs/vercel-deployment-patterns.md`
 - This file: `docs/workings.md`
 - Deployment: `vercel.json`, `DEPLOYMENT.md`

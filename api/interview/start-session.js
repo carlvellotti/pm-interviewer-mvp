@@ -1,15 +1,8 @@
 import { OpenAI } from 'openai';
-import path from 'path';
-import fs from 'fs';
-import os from 'os';
-import mammoth from 'mammoth';
-import WordExtractor from 'word-extractor';
 import { getCategoryById, getQuestionsByIds } from '../_lib/config.js';
 
 const REALTIME_MODEL = process.env.REALTIME_MODEL || 'gpt-4o-realtime-preview-2024-12-17';
 const REALTIME_VOICE = process.env.REALTIME_VOICE || 'alloy';
-
-const tempStorageRoot = path.join(os.tmpdir(), 'interview-prep');
 
 const personas = {
   easy: {
@@ -39,78 +32,70 @@ function resolvePersona(key) {
   return personas[key] ?? personas['medium'];
 }
 
-function buildSystemPrompt(persona, questionList, category, resumeText, jdSummary) {
-  // If we have a category, use its AI guidance for richer prompts
-  if (category && category.aiGuidance) {
-    const guidance = category.aiGuidance;
-    const questionsList = questionList.map((q, i) => {
-      const typePrefix = q.type === 'exploratory' ? '[Exploratory] ' : '';
-      return `${i + 1}. ${typePrefix}${q.text || q.prompt}`;
-    }).join('\n');
-    
-    const closingReference = questionList.length > 0 ? `question ${questionList.length}` : 'the final question';
-    
-    let prompt = [
-      guidance.systemStyle,
-      '',
-      'Questions to cover:',
-      questionsList,
-      '',
-      'Question Approach:',
-      guidance.questionApproach,
-      '',
-      'Pacing:',
-      guidance.pacing,
-      '',
-      'Probe For:',
-      ...guidance.probeFor.map(p => `- ${p}`),
-      '',
-      'Avoid:',
-      ...guidance.avoid.map(a => `- ${a}`),
-      '',
-      'Evaluation Signals:',
-      ...guidance.evaluationSignals.map(s => `- ${s}`),
-      '',
-      `After finishing ${closingReference} and any follow-ups, close the interview by saying "INTERVIEW_COMPLETE" followed by a brief thank-you message.`
-    ].join('\n');
-    
-    if (resumeText) {
-      prompt += `\n\n--- Candidate Resume ---\n${resumeText}\n--- End Resume ---`;
-    }
-    if (jdSummary) {
-      prompt += `\n\n--- Job Description Summary ---\n${jdSummary}\n--- End Job Description Summary ---`;
-    }
-    
-    return prompt;
-  }
+// Generic AI guidance for custom and JD-generated questions
+const GENERIC_AI_GUIDANCE = {
+  systemStyle: 'You are a professional, balanced interviewer conducting a Product Manager interview. You are attentive, curious, and probe for depth when answers feel incomplete.',
+  questionApproach: 'Ask each question clearly. Listen actively and probe for specifics when answers are vague or lack detail. Use targeted follow-ups like: "Can you tell me more about your specific role?", "What was the outcome or impact?", "What alternatives did you consider?", "What would you do differently?"',
+  pacing: '6-10 minutes per question depending on complexity. Give candidates time to think and articulate their answers fully before moving on.',
+  probeFor: [
+    'Specific examples and concrete details',
+    'Personal contributions and decision-making',
+    'Impact and measurable outcomes',
+    'Trade-offs, constraints, and alternatives considered',
+    'Lessons learned and reflection'
+  ],
+  avoid: [
+    'Leading the candidate or suggesting answers',
+    'Cutting off answers prematurely',
+    'Accepting vague generalizations without probing',
+    'Making it hypothetical unless the question itself is hypothetical'
+  ],
+  evaluationSignals: [
+    'Strong: Specific examples, clear reasoning, quantified impact, acknowledges trade-offs, shows learning',
+    'Weak: Vague generalities, no personal ownership, no measurable outcomes, no reflection'
+  ]
+};
+
+function buildSystemPrompt(persona, questionList, category, jdSummary) {
+  // Use category's AI guidance if available, otherwise use generic guidance
+  const guidance = (category && category.aiGuidance) ? category.aiGuidance : GENERIC_AI_GUIDANCE;
   
-  // Fallback: old simple format for backward compatibility
-  const questionsText = questionList.map((q, i) => `${i + 1}. ${q.prompt || q.text}`).join('\n');
-  let prompt = `${persona.instructions}\n\nAsk the following questions in order:\n${questionsText}\n\nAfter you've asked all questions and received answers, say "INTERVIEW_COMPLETE" to signal the end.`;
-  if (resumeText) {
-    prompt += `\n\n--- Candidate Resume ---\n${resumeText}\n--- End Resume ---`;
-  }
+  const questionsList = questionList.map((q, i) => {
+    const typePrefix = q.type === 'exploratory' ? '[Exploratory] ' : '';
+    return `${i + 1}. ${typePrefix}${q.text || q.prompt}`;
+  }).join('\n');
+  
+  const closingReference = questionList.length > 0 ? `question ${questionList.length}` : 'the final question';
+  
+  let prompt = [
+    guidance.systemStyle,
+    '',
+    'Questions to cover:',
+    questionsList,
+    '',
+    'Question Approach:',
+    guidance.questionApproach,
+    '',
+    'Pacing:',
+    guidance.pacing,
+    '',
+    'Probe For:',
+    ...guidance.probeFor.map(p => `- ${p}`),
+    '',
+    'Avoid:',
+    ...guidance.avoid.map(a => `- ${a}`),
+    '',
+    'Evaluation Signals:',
+    ...guidance.evaluationSignals.map(s => `- ${s}`),
+    '',
+    `After finishing ${closingReference} and any follow-ups, close the interview by saying "INTERVIEW_COMPLETE" followed by a brief thank-you message.`
+  ].join('\n');
+  
   if (jdSummary) {
     prompt += `\n\n--- Job Description Summary ---\n${jdSummary}\n--- End Job Description Summary ---`;
   }
+  
   return prompt;
-}
-
-async function extractTextFromResume(filePath, originalName) {
-  const ext = path.extname(originalName || '').toLowerCase();
-  if (ext === '.txt') {
-    return fs.readFileSync(filePath, 'utf8');
-  }
-  if (ext === '.docx') {
-    const result = await mammoth.extractRawText({ path: filePath });
-    return result.value || '';
-  }
-  if (ext === '.doc') {
-    const extractor = new WordExtractor();
-    const extracted = await extractor.extract(filePath);
-    return extracted.getBody();
-  }
-  throw new Error(`Unsupported file extension: ${ext}`);
 }
 
 let openaiInstance;
@@ -135,7 +120,6 @@ export default async function handler(req, res) {
         categoryId,     // NEW format
         questionIds,    // NEW format
         difficulty, 
-        resumeRef, 
         jdSummary 
       } = body ?? {};
 
@@ -173,19 +157,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Either (categoryId + questionIds) or questionStack is required' });
       }
 
-      let resumeText = '';
-      if (resumeRef && typeof resumeRef === 'string') {
-        const resumePath = path.join(tempStorageRoot, path.basename(resumeRef));
-        if (fs.existsSync(resumePath)) {
-          try {
-            resumeText = await extractTextFromResume(resumePath, resumeRef);
-          } catch (err) {
-            console.error('Error reading resume:', err);
-          }
-        }
-      }
-
-      const systemPrompt = buildSystemPrompt(persona, questionList, category, resumeText, jdSummary);
+      const systemPrompt = buildSystemPrompt(persona, questionList, category, jdSummary);
 
       const sessionBody = {
         session: {
@@ -248,7 +220,6 @@ export default async function handler(req, res) {
         categoryName: category?.name || null,       // NEW: category name
         estimatedDuration,                          // NEW: total duration
         persona,
-        resume: resumeText ? { text: resumeText } : null,
         jdSummary
       });
     }

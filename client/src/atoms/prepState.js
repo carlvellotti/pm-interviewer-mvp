@@ -48,8 +48,6 @@ export const selectedPersonaAtom = atom('medium');
 
 export const evaluationFocusAtom = atom([]);
 
-export const resumeUploadAtom = atom({ resumeRef: null, filename: null, status: 'idle', error: '' });
-
 export const jdUploadAtom = atom({
   status: 'idle',
   error: '',

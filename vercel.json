@@ -6,6 +6,10 @@
     {
       "src": "/api/interview/history/(?<id>[^/]+)",
       "dest": "/api/interview/history?id=$id"
+    },
+    {
+      "src": "/api/categories/(?<id>[^/]+)",
+      "dest": "/api/categories/[id]?id=$id"
     }
   ]
 }
