@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAtomValue } from 'jotai';
 import {
   interviewQuestionStackAtom,
@@ -25,6 +25,7 @@ export default function InterviewView({
   onReset
 }) {
   const [displayMode, setDisplayMode] = useState('equalizer'); // equalizer | transcript
+  const prevStatusRef = useRef(status);
   
   const interviewStack = useAtomValue(interviewQuestionStackAtom);
   const interviewPersona = useAtomValue(interviewPersonaAtom);
@@ -35,22 +36,23 @@ export default function InterviewView({
   
   const coaching = useMemo(() => parseCoachingSummary(summary), [summary]);
 
+  // Scroll to bottom when interview ends
+  useEffect(() => {
+    if (prevStatusRef.current === 'in-progress' && status !== 'in-progress') {
+      setTimeout(() => {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }, 300);
+    }
+    prevStatusRef.current = status;
+  }, [status]);
+
   return (
     <>
-      <header className="workspace-header">
+      <header className="workspace-header interview-header">
         <div className="header-text">
           <h2>New Interview</h2>
           <p className="subtle">Your interview is live</p>
         </div>
-        {status === 'in-progress' && (
-          <button
-            type="button"
-            className="button secondary"
-            onClick={onReset}
-          >
-            End Interview
-          </button>
-        )}
       </header>
 
       {error && <div className="banner error">{error}</div>}
@@ -66,13 +68,6 @@ export default function InterviewView({
             ) : (
               <div></div>
             )}
-            <button
-              type="button"
-              className="toggle-button"
-              onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
-            >
-              Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
-            </button>
           </div>
 
           {displayMode === 'transcript' ? (
@@ -93,6 +88,25 @@ export default function InterviewView({
           )}
         </div>
       </section>
+
+      {status === 'in-progress' && (
+        <div className="interview-actions">
+          <button
+            type="button"
+            className="toggle-button"
+            onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
+          >
+            Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
+          </button>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={onReset}
+          >
+            End Interview
+          </button>
+        </div>
+      )}
 
       <div className="live-details-grid">
         <SessionDetails

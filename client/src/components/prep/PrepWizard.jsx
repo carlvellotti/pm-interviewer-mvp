@@ -337,7 +337,7 @@ export default function PrepWizard() {
               </Tabs.Trigger>
             </Tabs.List>
 
-            <Tabs.Content className="TabsContent" value="categories">
+            <Tabs.Content className="TabsContent tab-categories" value="categories" data-mobile-title="Categories" forceMount>
               <div className="categories-tab">
                 <QuestionSection
                   title="Seed Categories"
@@ -366,7 +366,7 @@ export default function PrepWizard() {
               </div>
             </Tabs.Content>
 
-            <Tabs.Content className="TabsContent" value="upload">
+            <Tabs.Content className="TabsContent tab-upload" value="upload" data-mobile-title="Upload Job Description" forceMount>
               <section className="card">
                 <div className="card-header">
                   <h3>Job Description Paste</h3>
@@ -427,7 +427,7 @@ export default function PrepWizard() {
               </section>
             </Tabs.Content>
 
-            <Tabs.Content className="TabsContent" value="review">
+            <Tabs.Content className="TabsContent tab-review" value="review" data-mobile-title="Review Question Stack" forceMount>
               <section className="card">
                 <div className="card-header">
                   <h3>Review Question Stack</h3>

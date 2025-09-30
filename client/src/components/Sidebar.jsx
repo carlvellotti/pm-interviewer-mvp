@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { useSetAtom } from 'jotai';
 import { prepModeAtom } from '../atoms/prepState.js';
 import { useInterviewHistory } from '../hooks/useInterviewHistory.js';
@@ -16,20 +16,52 @@ function Sidebar() {
     clearSelection
   } = useInterviewHistory();
 
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile and collapse by default
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      setIsExpanded(!mobile);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const handleNewInterview = () => {
     clearSelection();
     setPrepMode('prep');
   };
 
+  const toggleExpanded = () => {
+    setIsExpanded(prev => !prev);
+  };
+
+  const historyCount = interviewList?.length || 0;
+
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
         <h1 className="sidebar-title">Interview Coach</h1>
-        <button type="button" className="sidebar-primary-action" onClick={handleNewInterview}>
-          New Interview
-        </button>
+        <div className="sidebar-actions">
+          <button type="button" className="sidebar-primary-action" onClick={handleNewInterview}>
+            New Interview
+          </button>
+          {!isExpanded && historyCount > 0 && (
+            <button type="button" className="history-toggle" onClick={toggleExpanded} aria-label={`View past interviews (${historyCount})`}>
+              <span className="history-icon">⏮</span>
+              <span className="history-count">{historyCount}</span>
+            </button>
+          )}
+        </div>
       </div>
-      <div className="sidebar-body">
+      {isExpanded && (
+        <>
+          <div className="sidebar-body">
         {historyLoading ? (
           <div className="sidebar-placeholder subtle">Loading history…</div>
         ) : historyError ? (
@@ -60,6 +92,13 @@ function Sidebar() {
           </ul>
         )}
       </div>
+      {isMobile && (
+        <button type="button" className="history-collapse" onClick={toggleExpanded}>
+          Hide History
+        </button>
+      )}
+        </>
+      )}
     </aside>
   );
 }

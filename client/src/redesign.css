@@ -85,6 +85,58 @@
   box-shadow: 0 16px 36px rgba(99, 102, 241, 0.42);
 }
 
+.history-toggle {
+  appearance: none;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  background: rgba(99, 102, 241, 0.1);
+  color: #a5b4fc;
+  border-radius: 0.5rem;
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.history-toggle:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(129, 140, 248, 0.4);
+  color: #c7d2fe;
+}
+
+.history-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.history-count {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.history-collapse {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  transition: color 0.15s ease;
+}
+
+.history-collapse:hover {
+  color: #c7d2fe;
+}
+
 .sidebar-body {
   padding: 1rem 0.75rem 1.5rem;
   flex: 1;
@@ -376,6 +428,18 @@
   margin-bottom: 1.5rem;
 }
 
+.interview-actions {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  justify-content: center;
+}
+
+.interview-actions button {
+  flex: 0 1 auto;
+  min-width: 160px;
+}
+
 .live-details-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -459,6 +523,48 @@
     box-shadow: none;
   }
 
+  .sidebar-header {
+    padding: 1rem 1.25rem;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+
+  .sidebar-title {
+    font-size: 1rem;
+    margin: 0;
+    flex-shrink: 0;
+  }
+
+  .sidebar-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .sidebar-primary-action {
+    flex: 0 0 auto;
+    padding: 0.65rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  .history-toggle {
+    flex: 0 0 auto;
+    min-width: auto;
+    padding: 0.65rem 0.9rem;
+    gap: 0.4rem;
+  }
+
+  .history-icon {
+    font-size: 1rem;
+  }
+
+  .history-count {
+    font-size: 0.85rem;
+  }
+
   .sidebar-body {
     max-height: 240px;
   }
@@ -470,6 +576,22 @@
   .workspace-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  /* Hide interview page header on mobile */
+  .interview-header {
+    display: none;
+  }
+
+  .interview-actions {
+    flex-direction: row;
+    margin-bottom: 1rem;
+    gap: 0.5rem;
+  }
+
+  .interview-actions button {
+    flex: 1;
+    min-width: 0;
   }
 
   .live-details-grid {
@@ -515,6 +637,123 @@
 
   .action-row button {
     width: 100%;
+  }
+
+  /* Prep Wizard Mobile */
+  .prep-header {
+    padding: 1rem 1.25rem;
+  }
+
+  .prep-header h2 {
+    display: none;
+  }
+
+  .prep-header .subtle {
+    font-size: 0.9rem;
+    margin: 0;
+  }
+
+  .prep-content {
+    grid-template-columns: 1fr;
+    padding: 1.25rem;
+    gap: 1.5rem;
+  }
+
+  .prep-tabs {
+    order: -1; /* Move main content to top on mobile */
+  }
+
+  .prep-sidebar {
+    order: 1; /* Sidebar comes after main content */
+  }
+
+  .prep-tabs .TabsRoot {
+    display: block !important;
+  }
+
+  .prep-tabs .TabsList {
+    display: none !important; /* Hide tabs on mobile */
+  }
+
+  .prep-tabs .TabsContent {
+    display: block !important; /* Show all content stacked */
+    padding: 1rem;
+    border-bottom: 1px solid rgba(129, 140, 248, 0.15);
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .prep-tabs .TabsContent[data-state="inactive"] {
+    display: block !important; /* Override Radix hidden state */
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    pointer-events: auto !important;
+  }
+
+  .prep-tabs .TabsContent > * {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  .prep-tabs .TabsContent:last-child {
+    border-bottom: none;
+  }
+
+  .categories-tab {
+    gap: 1.5rem;
+  }
+
+  /* Simplify card styling on mobile for upload/review tabs */
+  .prep-tabs .tab-upload .card,
+  .prep-tabs .tab-review .card {
+    background: transparent;
+    border: none;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .prep-tabs .tab-upload .card-header,
+  .prep-tabs .tab-review .card-header {
+    display: none; /* Headers redundant with section titles */
+  }
+
+  .prep-tabs .tab-upload .card-body,
+  .prep-tabs .tab-review .card-body {
+    padding: 0;
+  }
+
+  /* Keep card styling in categories tab for subsections */
+  .prep-tabs .tab-categories .card {
+    margin-bottom: 1.5rem;
+  }
+
+  .prep-tabs .tab-categories .card:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Add mobile section headers */
+  .prep-tabs .TabsContent::before {
+    content: attr(data-mobile-title);
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #c7d2fe;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 1rem 0;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid rgba(129, 140, 248, 0.3);
+  }
+
+  .prep-tabs .TabsContent:first-of-type {
+    padding-top: 1.5rem;
+  }
+
+  .summary-card {
+    grid-template-columns: 1fr;
   }
 }
 

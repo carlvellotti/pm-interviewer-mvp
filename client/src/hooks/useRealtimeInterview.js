@@ -95,7 +95,7 @@ export function useRealtimeInterview() {
         onDataChannelMessage,
         onDataChannelClose: () => {
           if (statusRef.current === 'in-progress') {
-            setError('The interviewer disconnected unexpectedly.');
+            setError('The interviewer disconnected.');
             setStatus('idle');
           }
         },

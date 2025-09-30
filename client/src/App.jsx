@@ -46,6 +46,13 @@ function InterviewExperience() {
   const selectedInterview = useAtomValue(selectedInterviewAtom);
   const [interviewList, setInterviewList] = useAtom(interviewListAtom);
 
+  // Scroll to top when interview starts
+  useEffect(() => {
+    if (prepMode === 'interview') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [prepMode]);
+
   const {
     status,
     error,

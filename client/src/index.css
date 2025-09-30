@@ -632,6 +632,11 @@ button:not(.primary):not(.secondary):not(.link-button):not(.tone-button):not(.si
   border-bottom: 1px solid rgba(129, 140, 248, 0.15);
 }
 
+.custom-category:first-child {
+  margin-top: 0;
+  padding-top: 0;
+}
+
 .custom-category:last-child {
   margin-bottom: 0;
   padding-bottom: 0;
