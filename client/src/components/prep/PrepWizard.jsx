@@ -754,7 +754,7 @@ export default function PrepWizard() {
             </div>
             <div className="card-body summary-card">
               <div>
-                <span className="label">Questions selected</span>
+                <span className="label"># Questions</span>
                 <strong>{totalSelectedQuestions}</strong>
               </div>
               <div>
