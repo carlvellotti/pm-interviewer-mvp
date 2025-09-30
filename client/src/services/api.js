@@ -35,6 +35,9 @@ async function handleResponse(response) {
 }
 
 export async function fetchConfiguration() {
+  // Returns: { categories, questions, evaluationFocus, personas, defaults }
+  // NEW: categories array with interview types
+  // OLD: questions, evaluationFocus, defaults (backward compatible)
   const response = await fetch(`${API_BASE_URL}/questions`);
   return handleResponse(response);
 }
@@ -103,6 +106,9 @@ export async function uploadJobDescription(payload) {
 }
 
 export async function startInterviewSession(payload) {
+  // Accepts two formats:
+  // NEW: { categoryId, questionIds, difficulty, resumeRef }
+  // OLD: { questionStack, difficulty, resumeRef, jdSummary } (still supported)
   const response = await fetch(`${API_BASE_URL}/interview/start-session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

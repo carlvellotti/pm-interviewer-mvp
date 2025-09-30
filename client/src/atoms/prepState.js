@@ -2,6 +2,16 @@ import { atom } from 'jotai';
 
 export const prepModeAtom = atom('prep'); // prep | interview | history
 
+// NEW: Interview Categories
+export const interviewCategoriesAtom = atom([]);
+export const selectedCategoryIdAtom = atom(null);
+export const selectedCategoryAtom = atom(get => {
+  const categoryId = get(selectedCategoryIdAtom);
+  const categories = get(interviewCategoriesAtom);
+  return categories.find(c => c.id === categoryId) || null;
+});
+
+// OLD: Keep for backward compatibility with custom categories & JD
 export const questionOptionsAtom = atom([]);
 export const customCategoriesAtom = atom([]);
 export const jdQuestionsAtom = atom([]);
@@ -9,6 +19,14 @@ export const jdQuestionsAtom = atom([]);
 export const selectedQuestionIdsAtom = atom([]);
 export const selectedQuestionsAtom = atom(get => {
   const selectedIds = get(selectedQuestionIdsAtom);
+  
+  // NEW: If a category is selected, get questions from it
+  const selectedCategory = get(selectedCategoryAtom);
+  if (selectedCategory && selectedCategory.questions) {
+    return selectedCategory.questions.filter(q => selectedIds.includes(q.id));
+  }
+  
+  // OLD: Fallback to original behavior (custom categories, JD, old seed questions)
   const options = get(questionOptionsAtom);
   const custom = get(customCategoriesAtom).flatMap(category => category.questions || []);
   const jdGenerated = get(jdQuestionsAtom);
