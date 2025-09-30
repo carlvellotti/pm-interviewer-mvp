@@ -367,40 +367,79 @@ export default function PrepWizard() {
 
             <Tabs.Content className="TabsContent tab-categories" value="categories" data-mobile-title="Categories" forceMount>
               <div className="categories-tab">
-                {/* NEW: Category selector */}
+                {/* NEW: Accordion-style category selector */}
                 <section className="card">
                   <div className="card-header">
                     <h3>Select Interview Type</h3>
-                    <p className="subtle">Choose one interview category</p>
+                    <p className="subtle">Choose one category and select questions</p>
                   </div>
-                  <div className="card-body category-selector">
-                    {interviewCategories.map(category => (
-                      <label key={category.id} className="category-option">
-                        <input
-                          type="radio"
-                          name="category"
-                          checked={selectedCategoryId === category.id}
-                          onChange={() => handleCategorySelect(category.id)}
-                        />
-                        <div className="category-content">
-                          <strong>{category.name}</strong>
-                          <p className="subtle">{category.description}</p>
+                  <div className="card-body category-accordion">
+                    {interviewCategories.map(category => {
+                      const isExpanded = selectedCategoryId === category.id;
+                      return (
+                        <div key={category.id} className={`category-accordion-item ${isExpanded ? 'expanded' : ''}`}>
+                          <button
+                            className="category-accordion-trigger"
+                            onClick={() => handleCategorySelect(category.id)}
+                            type="button"
+                          >
+                            <div className="category-accordion-header">
+                              <div className="category-accordion-title">
+                                <strong>{category.name}</strong>
+                                <p className="subtle">{category.description}</p>
+                              </div>
+                              <svg
+                                className="category-accordion-chevron"
+                                width="20"
+                                height="20"
+                                viewBox="0 0 20 20"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path
+                                  d="M5 7.5L10 12.5L15 7.5"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            </div>
+                          </button>
+                          
+                          {isExpanded && (
+                            <div className="category-accordion-content">
+                              <div className="question-list">
+                                {category.questions.map(question => {
+                                  const isSelected = selectedQuestionIds.includes(question.id);
+                                  return (
+                                    <label
+                                      key={question.id}
+                                      className={`question-item ${isSelected ? 'selected' : ''}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => handleToggleQuestion(question.id)}
+                                      />
+                                      <div>
+                                        <strong>
+                                          {question.text}
+                                          <span className="duration-badge"> ({question.estimatedDuration} min)</span>
+                                        </strong>
+                                        {question.rationale && <p className="subtle">{question.rationale}</p>}
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </label>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
-
-                {/* NEW: Questions appear when category selected */}
-                {selectedCategory && (
-                  <QuestionSection
-                    title={`${selectedCategory.name} Questions`}
-                    subtitle="Select questions for your interview"
-                    questions={selectedCategory.questions}
-                    selectedQuestionIds={selectedQuestionIds}
-                    onToggle={handleToggleQuestion}
-                  />
-                )}
 
                 {/* KEEP: Custom categories */}
                 <CustomCategoriesSection
