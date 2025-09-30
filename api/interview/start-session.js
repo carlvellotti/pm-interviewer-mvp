@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import mammoth from 'mammoth';
 import WordExtractor from 'word-extractor';
+import { getCategoryById, getQuestionsByIds } from '../_lib/config.js';
 
 const REALTIME_MODEL = process.env.REALTIME_MODEL || 'gpt-4o-realtime-preview-2024-12-17';
 const REALTIME_VOICE = process.env.REALTIME_VOICE || 'alloy';
@@ -38,7 +39,52 @@ function resolvePersona(key) {
   return personas[key] ?? personas['medium'];
 }
 
-function buildSystemPrompt(persona, questionList, resumeText, jdSummary) {
+function buildSystemPrompt(persona, questionList, category, resumeText, jdSummary) {
+  // If we have a category, use its AI guidance for richer prompts
+  if (category && category.aiGuidance) {
+    const guidance = category.aiGuidance;
+    const questionsList = questionList.map((q, i) => {
+      const typePrefix = q.type === 'exploratory' ? '[Exploratory] ' : '';
+      return `${i + 1}. ${typePrefix}${q.text || q.prompt}`;
+    }).join('\n');
+    
+    const closingReference = questionList.length > 0 ? `question ${questionList.length}` : 'the final question';
+    
+    let prompt = [
+      guidance.systemStyle,
+      '',
+      'Questions to cover:',
+      questionsList,
+      '',
+      'Question Approach:',
+      guidance.questionApproach,
+      '',
+      'Pacing:',
+      guidance.pacing,
+      '',
+      'Probe For:',
+      ...guidance.probeFor.map(p => `- ${p}`),
+      '',
+      'Avoid:',
+      ...guidance.avoid.map(a => `- ${a}`),
+      '',
+      'Evaluation Signals:',
+      ...guidance.evaluationSignals.map(s => `- ${s}`),
+      '',
+      `After finishing ${closingReference} and any follow-ups, close the interview by saying "INTERVIEW_COMPLETE" followed by a brief thank-you message.`
+    ].join('\n');
+    
+    if (resumeText) {
+      prompt += `\n\n--- Candidate Resume ---\n${resumeText}\n--- End Resume ---`;
+    }
+    if (jdSummary) {
+      prompt += `\n\n--- Job Description Summary ---\n${jdSummary}\n--- End Job Description Summary ---`;
+    }
+    
+    return prompt;
+  }
+  
+  // Fallback: old simple format for backward compatibility
   const questionsText = questionList.map((q, i) => `${i + 1}. ${q.prompt || q.text}`).join('\n');
   let prompt = `${persona.instructions}\n\nAsk the following questions in order:\n${questionsText}\n\nAfter you've asked all questions and received answers, say "INTERVIEW_COMPLETE" to signal the end.`;
   if (resumeText) {
@@ -83,12 +129,49 @@ export default async function handler(req, res) {
 
   try {
     if (method === 'POST') {
-      const { questionStack, difficulty, resumeRef, jdSummary } = body ?? {};
+      // Support both old format (questionStack) and new format (categoryId + questionIds)
+      const { 
+        questionStack,  // OLD format
+        categoryId,     // NEW format
+        questionIds,    // NEW format
+        difficulty, 
+        resumeRef, 
+        jdSummary 
+      } = body ?? {};
 
       const persona = resolvePersona(difficulty);
-      const questionList = Array.isArray(questionStack) && questionStack.length > 0
-        ? questionStack
-        : [];
+      
+      let questionList = [];
+      let category = null;
+      
+      // NEW format: categoryId + questionIds
+      if (categoryId && Array.isArray(questionIds) && questionIds.length > 0) {
+        category = getCategoryById(categoryId);
+        if (!category) {
+          return res.status(400).json({ error: `Invalid category ID: ${categoryId}` });
+        }
+        
+        questionList = getQuestionsByIds(categoryId, questionIds);
+        if (questionList.length === 0) {
+          return res.status(400).json({ error: 'No valid questions found for the provided question IDs' });
+        }
+        
+        // Validate all question IDs belong to this category
+        const validIds = new Set(category.questions.map(q => q.id));
+        const invalidIds = questionIds.filter(id => !validIds.has(id));
+        if (invalidIds.length > 0) {
+          return res.status(400).json({ 
+            error: `Invalid question IDs for category "${categoryId}": ${invalidIds.join(', ')}` 
+          });
+        }
+      }
+      // OLD format: questionStack
+      else if (Array.isArray(questionStack) && questionStack.length > 0) {
+        questionList = questionStack;
+      }
+      else {
+        return res.status(400).json({ error: 'Either (categoryId + questionIds) or questionStack is required' });
+      }
 
       let resumeText = '';
       if (resumeRef && typeof resumeRef === 'string') {
@@ -102,7 +185,7 @@ export default async function handler(req, res) {
         }
       }
 
-      const systemPrompt = buildSystemPrompt(persona, questionList, resumeText, jdSummary);
+      const systemPrompt = buildSystemPrompt(persona, questionList, category, resumeText, jdSummary);
 
       const sessionBody = {
         session: {
@@ -148,6 +231,11 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'Realtime token missing in response.' });
       }
 
+      // Calculate estimated duration from selected questions
+      const estimatedDuration = questionList.reduce((sum, q) => 
+        sum + (q.estimatedDuration || 0), 0
+      );
+
       return res.json({
         session: {
           clientSecret,
@@ -156,6 +244,9 @@ export default async function handler(req, res) {
           instructions: systemPrompt
         },
         questionStack: questionList,
+        categoryId: category?.id || null,           // NEW: category ID
+        categoryName: category?.name || null,       // NEW: category name
+        estimatedDuration,                          // NEW: total duration
         persona,
         resume: resumeText ? { text: resumeText } : null,
         jdSummary
