@@ -12,8 +12,14 @@ export default async function handler(req, res) {
         jdSummary,
         questionStack,
         transcript,
-        summary
+        summary,      // OLD format (deprecated)
+        evaluation,   // NEW format
+        metadata,
+        title
       } = body ?? {};
+
+      // Support both old and new formats
+      const evaluationData = evaluation || summary || { summary: 'No evaluation provided', strengths: [], improvements: [] };
 
       const interview = saveInterview({
         persona,
@@ -22,8 +28,9 @@ export default async function handler(req, res) {
         jdSummary,
         questionStack,
         transcript: transcript || [],
-        evaluation: summary || { summary: 'No evaluation provided', strengths: [], improvements: [] },
-        metadata: { persona, difficulty, resumeFilename, jdSummary, questionStack }
+        evaluation: evaluationData,
+        metadata: metadata || { persona, difficulty, resumeFilename, jdSummary, questionStack },
+        title: title || null
       });
 
       return res.json(interview);

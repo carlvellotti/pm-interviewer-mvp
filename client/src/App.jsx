@@ -130,6 +130,7 @@ function InterviewExperience() {
   } = useInterviewMessages({
     onComplete: (conversation) => {
       cleanupConnection();
+      setInterviewSession(null); // Clear session to prevent auto-restart
       fetchSummary(conversation);
     }
   });
