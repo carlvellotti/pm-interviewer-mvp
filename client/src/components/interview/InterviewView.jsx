@@ -35,17 +35,17 @@ export default function InterviewView({
   
   const coaching = useMemo(() => parseCoachingSummary(summary), [summary]);
 
-  // If we have a summary, show only the summary (interview has ended)
-  if (summary) {
-    return (
-      <>
-        <header className="workspace-header interview-header">
-          <div className="header-text">
-            <h2>Interview Complete</h2>
-            <p className="subtle">Review your performance below</p>
-          </div>
-        </header>
+  return (
+    <>
+      <header className="workspace-header interview-header">
+        <div className="header-text">
+          <h2>{summary ? 'Interview Complete' : 'New Interview'}</h2>
+          <p className="subtle">{summary ? 'Review your performance below' : 'Your interview is live'}</p>
+        </div>
+      </header>
 
+      {summary ? (
+        // Show summary when interview is complete
         <section className="summary">
           <h3>Coaching Advice</h3>
           <div>
@@ -83,73 +83,60 @@ export default function InterviewView({
             )}
           </div>
         </section>
-
-        <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only" />
-      </>
-    );
-  }
-
-  // Otherwise, show the live interview UI
-  return (
-    <>
-      <header className="workspace-header interview-header">
-        <div className="header-text">
-          <h2>New Interview</h2>
-          <p className="subtle">Your interview is live</p>
-        </div>
-      </header>
-
-      {error && <div className="banner error">{error}</div>}
-
-      <section className="live-stage-full">
-        <div className="panel">
-          <div className="panel-header">
-            {status === 'in-progress' ? (
-              <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
-                <span className="dot" />
-                <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
+      ) : (
+        // Show live interview UI
+        <>
+          <section className="live-stage-full">
+            <div className="panel">
+              <div className="panel-header">
+                {status === 'in-progress' ? (
+                  <div className={`mic-indicator ${isMicActive ? 'active' : ''}`}>
+                    <span className="dot" />
+                    <span>{isMicActive ? 'Microphone live' : 'Microphone unavailable'}</span>
+                  </div>
+                ) : (
+                  <div></div>
+                )}
               </div>
-            ) : (
-              <div></div>
-            )}
-          </div>
 
-          {displayMode === 'transcript' ? (
-            <div className={`transcript-view ${status === 'in-progress' ? 'active' : ''}`}>
-              {displayMessages.length === 0 ? (
-                <span className="placeholder subtle">Transcript will appear here once the interview starts…</span>
+              {displayMode === 'transcript' ? (
+                <div className={`transcript-view ${status === 'in-progress' ? 'active' : ''}`}>
+                  {displayMessages.length === 0 ? (
+                    <span className="placeholder subtle">Transcript will appear here once the interview starts…</span>
+                  ) : (
+                    <pre>
+                      {displayMessages
+                        .map(m => `${m.role === 'assistant' ? 'Interviewer' : 'You'}: ${m.text}`)
+                        .join('\n\n')}
+                      {status === 'in-progress' ? '▋' : ''}
+                    </pre>
+                  )}
+                </div>
               ) : (
-                <pre>
-                  {displayMessages
-                    .map(m => `${m.role === 'assistant' ? 'Interviewer' : 'You'}: ${m.text}`)
-                    .join('\n\n')}
-                  {status === 'in-progress' ? '▋' : ''}
-                </pre>
+                <AudioVisualizer remoteStream={remoteStream} status={status} />
               )}
             </div>
-          ) : (
-            <AudioVisualizer remoteStream={remoteStream} status={status} />
-          )}
-        </div>
-      </section>
+          </section>
 
-      {status === 'in-progress' && (
-        <div className="interview-actions">
-          <button
-            type="button"
-            className="toggle-button"
-            onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
-          >
-            Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
-          </button>
-          <button
-            type="button"
-            className="button secondary"
-            onClick={onReset}
-          >
-            End Interview
-          </button>
-        </div>
+          {status === 'in-progress' && (
+            <div className="interview-actions">
+              <button
+                type="button"
+                className="toggle-button"
+                onClick={() => setDisplayMode(displayMode === 'equalizer' ? 'transcript' : 'equalizer')}
+              >
+                Switch to {displayMode === 'equalizer' ? 'Transcript' : 'Visualization'}
+              </button>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={onReset}
+              >
+                End Interview
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <div className="live-details-grid">
