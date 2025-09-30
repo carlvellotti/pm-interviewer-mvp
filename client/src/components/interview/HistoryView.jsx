@@ -103,9 +103,12 @@ export default function HistoryView({ onReturnToLive, summary }) {
         <section className="history-section">
           <h3>Transcript</h3>
           {detailLoading ? (
-            <div className="history-placeholder subtle">Loading transcript…</div>
+            <div className="history-placeholder">Loading transcript…</div>
           ) : detailTranscript.length === 0 ? (
-            <div className="history-placeholder subtle">Transcript unavailable for this session.</div>
+            <div className="history-placeholder">
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem', opacity: 0.3 }}>💬</div>
+              <div>No transcript available</div>
+            </div>
           ) : (
             <div className="history-transcript">
               {detailTranscript.map((entry, index) => {
@@ -126,7 +129,7 @@ export default function HistoryView({ onReturnToLive, summary }) {
         <section className="history-section">
           <h3>Evaluation</h3>
           {detailLoading ? (
-            <div className="history-placeholder subtle">Loading evaluation…</div>
+            <div className="history-placeholder">Loading evaluation…</div>
           ) : detailCoaching ? (
             <div className="summary">
               {detailCoaching.summary && (
@@ -159,7 +162,13 @@ export default function HistoryView({ onReturnToLive, summary }) {
           ) : summary ? (
             <pre className="history-summary-text">{summary}</pre>
           ) : (
-            <div className="history-placeholder subtle">Evaluation unavailable for this session.</div>
+            <div className="history-placeholder">
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem', opacity: 0.3 }}>📊</div>
+              <div>No evaluation available</div>
+              <div style={{ fontSize: '0.85rem', marginTop: '0.5rem', opacity: 0.6 }}>
+                This interview was saved before completion
+              </div>
+            </div>
           )}
         </section>
       </div>

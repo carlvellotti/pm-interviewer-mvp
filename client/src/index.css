@@ -518,9 +518,18 @@ button:not(.primary):not(.secondary):not(.link-button):not(.tone-button):not(.si
 
 .summary-block p {
   margin: 0;
-  color: rgba(207, 219, 255, 0.75);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  color: #e5e7eb;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.summary-block ul {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+.summary-block li {
+  color: #e5e7eb;
 }
 
 /* Resume uploader */

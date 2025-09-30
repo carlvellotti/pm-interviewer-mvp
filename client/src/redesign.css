@@ -264,70 +264,110 @@
 .history-view {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 2rem;
+  max-width: 1200px;
 }
 
 .history-section {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: #1a1d29;
+  border: 1px solid rgba(99, 102, 241, 0.2);
   border-radius: 0.75rem;
-  padding: 1.25rem;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .history-section h3 {
-  margin: 0 0 0.75rem;
+  margin: 0;
+  padding: 1.25rem 1.5rem;
   font-size: 1.1rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(99, 102, 241, 0.08);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.2);
 }
 
 .history-placeholder {
-  background: #f9fafb;
-  border: 1px dashed #d1d5db;
-  border-radius: 0.75rem;
-  padding: 1rem;
+  padding: 3rem 1.5rem;
   text-align: center;
+  font-size: 0.95rem;
   color: #6b7280;
-  font-size: 0.9rem;
+  background: rgba(15, 23, 42, 0.3);
 }
 
 .history-transcript {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  max-height: 420px;
+  gap: 0;
+  max-height: 600px;
   overflow-y: auto;
-  padding-right: 0.5rem;
+  padding: 1.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
+}
+
+.history-transcript::-webkit-scrollbar {
+  width: 8px;
+}
+
+.history-transcript::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-transcript::-webkit-scrollbar-thumb {
+  background-color: rgba(99, 102, 241, 0.3);
+  border-radius: 4px;
+}
+
+.history-transcript::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(99, 102, 241, 0.5);
 }
 
 .history-turn {
   display: grid;
-  grid-template-columns: 140px 1fr;
-  gap: 0.75rem;
-  background: #f9fafb;
-  border-radius: 0.75rem;
-  padding: 0.75rem 0.9rem;
-  border: 1px solid #e5e7eb;
+  grid-template-columns: 120px 1fr;
+  gap: 1.25rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.1);
+}
+
+.history-turn:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.history-turn:first-child {
+  padding-top: 0;
 }
 
 .history-turn .turn-role {
   font-weight: 600;
-  color: #4338ca;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #818cf8;
+  padding-top: 0.15rem;
 }
 
 .history-turn .turn-text {
   white-space: pre-wrap;
-  line-height: 1.55;
-  color: #1f2937;
+  line-height: 1.7;
+  color: #d1d5db;
+  font-size: 0.95rem;
 }
 
 .history-summary-text {
-  background: #f3f4f6;
-  border-radius: 0.75rem;
-  padding: 1rem;
+  background: rgba(15, 23, 42, 0.3);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin: 1.5rem;
   font-family: inherit;
+  font-size: 0.95rem;
+  color: #d1d5db;
+  line-height: 1.7;
   white-space: pre-wrap;
-  line-height: 1.6;
-  margin: 0;
+  overflow-x: auto;
+  border: 1px solid rgba(99, 102, 241, 0.1);
 }
 
 .live-stage-full {
@@ -344,19 +384,69 @@
 }
 
 .history-view .summary {
-  margin-top: 0;
+  margin: 0;
+  padding: 1.5rem;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+
+.history-view .summary-block {
+  margin: 0 0 2rem 0;
+}
+
+.history-view .summary-block:last-child {
+  margin-bottom: 0;
 }
 
 .history-view .summary-block h4 {
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.75rem;
+  font-weight: 700;
+  color: #a5b4fc;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+}
+
+.history-view .summary-block p {
+  margin: 0;
+  color: #e5e7eb;
+  font-size: 0.95rem;
+  line-height: 1.7;
 }
 
 .history-view .summary-block ul {
   margin: 0;
+  padding-left: 0;
+  list-style-type: none;
+}
+
+.history-view .summary-block li {
+  position: relative;
+  color: #e5e7eb;
+  font-size: 0.95rem;
+  line-height: 1.8;
+  padding-left: 1.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.history-view .summary-block li:last-child {
+  margin-bottom: 0;
+}
+
+.history-view .summary-block li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: #818cf8;
+  font-weight: bold;
+  font-size: 1rem;
 }
 
 .history-view .summary-block li + li {
-  margin-top: 0.35rem;
+  margin-top: 0;
 }
 
 @media (max-width: 768px) {
@@ -388,10 +478,11 @@
 
   .history-turn {
     grid-template-columns: 1fr;
+    gap: 0.5rem;
   }
 
   .history-turn .turn-role {
-    color: #6b7280;
+    color: #818cf8;
   }
 
   .question-checkboxes {
@@ -635,16 +726,99 @@
 }
 
 .summary {
-  margin-top: 1rem;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  margin-top: 1.5rem;
+  background: #1a1d29;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 0.75rem;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.summary h3 {
+  margin: 0;
+  padding: 1.25rem 1.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(99, 102, 241, 0.08);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.summary > :not(h3) {
+  padding: 1.5rem;
+}
+
+.summary .summary-block {
+  margin: 0 0 2rem 0;
+}
+
+.summary .summary-block:last-child {
+  margin-bottom: 0;
+}
+
+.summary .summary-block h4 {
+  margin: 0 0 0.75rem;
+  font-weight: 700;
+  color: #a5b4fc;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+}
+
+.summary .summary-block p {
+  margin: 0;
+  color: #e5e7eb;
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.summary .summary-block ul {
+  margin: 0;
+  padding-left: 0;
+  list-style-type: none;
+}
+
+.summary .summary-block li {
+  position: relative;
+  color: #e5e7eb;
+  font-size: 0.95rem;
+  line-height: 1.8;
+  padding-left: 1.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.summary .summary-block li:last-child {
+  margin-bottom: 0;
+}
+
+.summary .summary-block li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: #818cf8;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+.summary pre {
+  background: rgba(15, 23, 42, 0.3);
   border-radius: 0.5rem;
-  padding: 1rem;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  padding: 1.5rem;
+  margin: 1.5rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: #e5e7eb;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  border: 1px solid rgba(99, 102, 241, 0.1);
 }
 
 .summary h2 {
-  margin-top: 0;
+  margin: 0 0 1rem;
+  color: #ffffff;
+  font-size: 1.1rem;
 }
 
 .summary-block {

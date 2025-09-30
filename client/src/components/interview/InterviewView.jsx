@@ -106,38 +106,40 @@ export default function InterviewView({
       {summary && (
         <section className="summary">
           <h3>Coaching Advice</h3>
-          {coaching ? (
-            <>
-              {coaching.summary && (
-                <div className="summary-block">
-                  <h4>Summary of Overall Performance</h4>
-                  <p>{coaching.summary}</p>
-                </div>
-              )}
-              {coaching.strengths.length > 0 && (
-                <div className="summary-block">
-                  <h4>Strengths</h4>
-                  <ul>
-                    {coaching.strengths.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {coaching.improvements.length > 0 && (
-                <div className="summary-block">
-                  <h4>Improvements</h4>
-                  <ul>
-                    {coaching.improvements.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          ) : (
-            <pre>{summary}</pre>
-          )}
+          <div>
+            {coaching ? (
+              <>
+                {coaching.summary && (
+                  <div className="summary-block">
+                    <h4>Summary</h4>
+                    <p>{coaching.summary}</p>
+                  </div>
+                )}
+                {coaching.strengths.length > 0 && (
+                  <div className="summary-block">
+                    <h4>Strengths</h4>
+                    <ul>
+                      {coaching.strengths.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {coaching.improvements.length > 0 && (
+                  <div className="summary-block">
+                    <h4>Improvements</h4>
+                    <ul>
+                      {coaching.improvements.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : (
+              <pre>{summary}</pre>
+            )}
+          </div>
         </section>
       )}
 
