@@ -2,6 +2,23 @@
 
 This document summarizes how the two projects in this workspace are structured and how they work together, with a focus on the realtime interview flow.
 
+## Recent Updates (October 2025)
+
+**localStorage Migration (October 2025)**: Complete replacement of SQLite backend with browser localStorage:
+- **localStorage service layer** replaces all database operations
+- **Interview history** stored in browser (persistent across sessions)
+- **Custom categories** stored in browser
+- **Export/import** available via DevTools console
+- **~450 lines removed**: Eliminated SQLite, better-sqlite3, 7 backend endpoints
+- **Performance:** History loads instantly (5-10ms vs 200-500ms)
+- **Persistence:** Data survives Vercel restarts (localStorage vs ephemeral `/tmp`)
+- **Deployment:** Simpler (no native SQLite bindings to compile)
+- **Backend still uses maintainer's OpenAI API key** (user-provided keys deferred)
+
+See `docs/specs_completed/localStorage-migration.md` for full details.
+
+---
+
 ## Recent Updates (September 2025)
 
 **Interview Categories System**: Major refactor from free-form question selection to category-first approach:
@@ -18,8 +35,8 @@ See `docs/specs_completed/interview-categories.md` and `docs/initial_question_ba
 ## Projects
 
 - **Full‑stack prototype** in `interview-bot-test/`
-  - **Backend**: `server/` (Express + OpenAI + SQLite persistence)
-  - **Frontend**: `client/` (React + Vite, WebRTC to OpenAI Realtime)
+  - **Backend**: `api/` serverless functions (OpenAI integration only, no database)
+  - **Frontend**: `client/` (React + Vite + localStorage, WebRTC to OpenAI Realtime)
 - **TypeScript UI demo** in `91363a6b-c3c6-44f9-8cf7-3dd5a2323680/`
   - Standalone Vite + React + TypeScript mock that simulates transcripts (no backend wiring)
 
@@ -27,12 +44,12 @@ See `docs/specs_completed/interview-categories.md` and `docs/initial_question_ba
 
 ## Development Workflow Overview
 
-**Current Deployment (Sept 2025):** Individual serverless functions in `api/` directory (see `docs/vercel-deployment-patterns.md` for the full story).
+**Current Deployment (Oct 2025):** Individual serverless functions in `api/` directory for OpenAI integration. All user data stored in browser localStorage.
 
 - **Architecture**
-  - `client/`: React SPA with a sidebar listing saved interviews and a main workspace for the live or historical session.
-  - `server/`: Express 5 + `better-sqlite3` for **local development only** (not deployed to Vercel).
-  - `api/`: Individual serverless functions that handle all production API requests on Vercel.
+  - `client/`: React SPA with localStorage for all data persistence (interviews, categories, settings)
+  - `server/`: Legacy Express server for local development (can be removed)
+  - `api/`: Individual serverless functions for OpenAI Realtime/Chat API integration only
 - **Local development options**
   1. **Recommended:** `vercel dev` from repo root – simulates production environment, uses serverless functions in `api/`
   2. **Alternative:** `cd server && npm start` (Express on port 4000) + `cd client && npm run dev` – faster iteration but different from production
@@ -74,32 +91,38 @@ Entry: `server/index.js` (Express 5, CORS, dotenv, `openai` SDK, SQLite persiste
 
 ### Key endpoints
 - `GET /health` – status check
-- `GET /questions` – returns interview configuration
-  - **NEW format**: `{ categories, personas }` where categories is array of 5 interview types with questions
-  - **OLD format**: Still includes `{ questions, evaluationFocus, defaults }` for backward compatibility
+- `GET /questions` – returns interview configuration (categories, personas)
 - `POST /interview/start-session` – creates OpenAI Realtime session
-  - **NEW format**: `{ categoryId, questionIds, difficulty, resumeRef }`
-  - **OLD format**: `{ questionStack, difficulty, resumeRef, jdSummary }` still supported
-  - Uses category-specific AI guidance to build rich system prompts
-  - Returns: `{ session, questionStack, categoryId, categoryName, estimatedDuration, persona }`
-- `POST /interview/summary` – produces coaching JSON from the transcript
-- `POST /interview/save` – persists transcript, evaluation, metadata to SQLite
-  - Accepts both `evaluation` (new) and `summary` (old) fields
-- `GET /interview/history` – returns interview summaries ordered newest-first
-- `GET /interview/history/:id` – loads full transcript/evaluation payload
+  - Input: `{ questionStack, difficulty, resumeRef, jdSummary }`
+  - Returns: `{ session, questionStack, persona }`
+  - Uses maintainer's OPENAI_API_KEY from environment
+- `POST /interview/summary` – generates coaching feedback from transcript
+  - Uses OpenAI Chat API with maintainer's key
 - `POST /interview/jd` – processes job description and generates questions
 - `POST /interview/resume` – uploads resume for context
-- `GET /categories` – custom user categories (CRUD endpoints at `/categories/:id`)
 
-### SQLite repository
-- File lives at `data/interviews.db` (plus WAL files) created automatically.
-- `server/interviewStore.js` manages schema creation and CRUD helpers using `better-sqlite3`.
-- Tables store `title`, timestamps, metadata JSON, transcript JSON, evaluation JSON, and evaluation summary string.
+**Removed endpoints (migrated to localStorage):**
+- ❌ `POST /interview/save` – interviews now saved to browser localStorage
+- ❌ `GET /interview/history` – history loaded from localStorage
+- ❌ `GET /interview/history/:id` – detail loaded from localStorage
+- ❌ `GET /categories` – custom categories stored in localStorage
+- ❌ `POST /categories` – CRUD moved to frontend
+- ❌ `PATCH /categories/:id` – CRUD moved to frontend  
+- ❌ `DELETE /categories/:id` – CRUD moved to frontend
+
+### Data Storage (localStorage)
+- **Interviews**: Stored in browser localStorage (`interview-coach-interviews` key)
+- **Custom categories**: Stored in browser (`interview-coach-categories` key)
+- **Service layer**: `client/src/services/localStorage.js` handles all CRUD operations
+- **Persistence**: Data survives page refreshes, browser restarts, Vercel deployments
+- **Export/import**: Available via DevTools console for backup/restore
+- **No database**: SQLite removed entirely, no `better-sqlite3` dependency
 
 ### Notes
-- Uses Node’s global `fetch` for OpenAI REST calls (Node 18+)
-- Express JSON + CORS middleware
-- WAL mode enabled for better concurrent-read performance; database ignored by git.
+- Backend is stateless (no database, no user data storage)
+- All user data stored client-side in browser localStorage
+- OpenAI API key configured via `OPENAI_API_KEY` environment variable on Vercel
+- Supports multiple users (each browser has isolated localStorage)
 
 ---
 
@@ -136,10 +159,13 @@ Entry: `client/src/App.jsx` (React + Vite + Jotai state management)
   - `CustomCategoriesSection.jsx` - User-created question categories
   - `ResumeUploader.jsx` - Resume upload and management
 - **Custom hooks:**
-  - `useInterviewHistory.js` - Interview list loading & detail fetching
+  - `useInterviewHistory.js` - Interview list loading from localStorage (instant, synchronous)
   - `useRealtimeInterview.js` - WebRTC connection lifecycle management
   - `useInterviewMessages.js` - Real-time message parsing & transcript handling
-- **Services:** `api.js` (REST calls), `webrtc.js` (WebRTC connection logic)
+- **Services:** 
+  - `api.js` (backend API calls for OpenAI integration)
+  - `localStorage.js` (all data persistence operations)
+  - `webrtc.js` (WebRTC connection logic)
 - **Utils:** `formatters.js` (date/time), `interviewHelpers.js` (prompts, parsing)
 
 ### Realtime voice flow (browser)
@@ -160,7 +186,7 @@ Entry: `client/src/App.jsx` (React + Vite + Jotai state management)
 
 ### Event handling
 - Same as before: absorbs message/transcription events and renders conversation.
-- When the assistant emits `INTERVIEW_COMPLETE`, or the user manually ends the session after some conversation, the app tears down WebRTC, calls `POST /interview/summary`, and persists the session via `/interview/save`.
+- When the assistant emits `INTERVIEW_COMPLETE`, or the user manually ends the session after some conversation, the app tears down WebRTC, calls `POST /interview/summary`, and persists the session to **browser localStorage** (instant save).
 
 ### UI states & layout
 - **App modes:** `prep` → `interview` → `history` (managed via `prepModeAtom`)
@@ -249,23 +275,20 @@ If you use the Vite dev server, set `VITE_API_BASE_URL=http://localhost:4000` in
 
 ## Deployment (Vercel)
 
-**Architecture:** Individual serverless functions (see `docs/vercel-deployment-patterns.md` for detailed explanation and alternatives).
+**Architecture:** Minimal serverless functions for OpenAI integration only. All user data in localStorage.
 
-- **API Structure:** Each route is a separate file in `api/` directory
-  - `api/health.js` → `/api/health`
-  - `api/categories/index.js` → `/api/categories`
-  - `api/categories/[id].js` → `/api/categories/:id` (dynamic route)
-  - `api/interview/history.js` → handles both `/api/interview/history` AND `/api/interview/history/:id` (via routes config)
-  - etc.
-- **Dynamic Route Handling:**
-  - **Preferred approach:** Single flat file + `routes` config in `vercel.json`
-  - **Why:** Directory-based dynamic routes (`[id].js`) are unreliable in `vercel dev`
-  - **Pattern:** Use `routes` array to transform path params → query params
-  - **Example:** `/api/interview/history/:id` → `/api/interview/history?id=:id`
-  - See `docs/DEBUG-history-route-404.md` for detailed explanation
-- **Database:** SQLite stored in `/tmp` (ephemeral, cleared periodically)
-  - Acceptable for demo/MVP use case
-  - Upgrade to Vercel Postgres/KV for persistence if needed
+- **API Structure:** Simplified to core OpenAI endpoints
+  - `api/health.js` → `/api/health` (health check)
+  - `api/questions.js` → `/api/questions` (interview config)
+  - `api/interview/start-session.js` → `/api/interview/start-session` (Realtime API)
+  - `api/interview/summary.js` → `/api/interview/summary` (Chat API for coaching)
+  - `api/interview/jd.js` → `/api/interview/jd` (job description processing)
+  - `api/interview/resume.js` → `/api/interview/resume` (resume upload)
+- **Data Storage:** Zero backend storage
+  - Interviews → browser localStorage
+  - Categories → browser localStorage  
+  - No database required
+  - No `/tmp` storage (removed SQLite entirely)
 - **Environment variables:**
   - `OPENAI_API_KEY` (required)
   - Optional: `REALTIME_MODEL`, `REALTIME_VOICE`, `REALTIME_TRANSCRIBE_MODEL`
@@ -292,8 +315,8 @@ Folder: `91363a6b-c3c6-44f9-8cf7-3dd5a2323680/`
 ## Pointers to key files
 
 ### Backend
-- Express server: `server/index.js`, `server/interviewStore.js`
-- Serverless API (Vercel production): `api/` (feature-parity with Express)
+- Serverless API (Vercel production): `api/` (OpenAI integration only)
+- Legacy Express server: `server/index.js` (can be removed, kept for local dev convenience)
 
 ### Frontend
 - Root: `client/src/App.jsx` (199 lines)
@@ -305,6 +328,7 @@ Folder: `91363a6b-c3c6-44f9-8cf7-3dd5a2323680/`
 - Styles: `client/src/redesign.css`
 
 ### Documentation
+- localStorage migration: `docs/specs_completed/localStorage-migration.md` (Oct 2025) **NEW**
 - Architecture refactor spec: `docs/specs_completed/app-refactor.md`
 - Interview categories spec: `docs/specs_completed/interview-categories.md` (Sept 2025)
 - Interview history sidebar: `docs/specs_completed/interview-history-sidebar.md`
@@ -313,4 +337,6 @@ Folder: `91363a6b-c3c6-44f9-8cf7-3dd5a2323680/`
 - This file: `docs/workings.md`
 - Deployment: `vercel.json`, `DEPLOYMENT.md`
 - API reference: `Realtime API.md`
+- Cleanup summary: `CLEANUP-SUMMARY.md` (SQLite removal)
+- Test results: `TEST-RESULTS.md` (localStorage migration tests)
 

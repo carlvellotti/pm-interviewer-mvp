@@ -6,7 +6,7 @@ import {
   selectedInterviewAtom,
   selectedInterviewIdAtom
 } from '../atoms/prepState.js';
-import { fetchInterviewDetail, fetchInterviewHistory } from '../services/api.js';
+import { getInterviews, getInterviewById } from '../services/localStorage.js';
 import { sortInterviewsByDate } from '../utils/interviewHelpers.js';
 
 export function useInterviewHistory() {
@@ -20,12 +20,11 @@ export function useInterviewHistory() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = useCallback(() => {
     try {
       setHistoryLoading(true);
       setHistoryError('');
-      const payload = await fetchInterviewHistory();
-      const interviews = Array.isArray(payload?.interviews) ? payload.interviews : [];
+      const interviews = getInterviews();
       setInterviewList(sortInterviewsByDate(interviews));
     } catch (err) {
       console.error(err);
@@ -35,7 +34,7 @@ export function useInterviewHistory() {
     }
   }, [setInterviewList]);
 
-  const loadInterviewDetail = useCallback(async id => {
+  const loadInterviewDetail = useCallback(id => {
     if (!id) {
       setSelectedInterviewId(null);
       setSelectedInterview(null);
@@ -48,18 +47,22 @@ export function useInterviewHistory() {
     try {
       setDetailLoading(true);
       setDetailError('');
-      const record = await fetchInterviewDetail(id);
-      setSelectedInterviewId(id);
-      setSelectedInterview(record);
-      setPrepMode('history');
-    } catch (err) {
-      console.error(err);
-      if (err?.status === 404) {
+      const record = getInterviewById(id);
+      
+      if (!record) {
         setDetailError('Interview not found. It may have been removed.');
         setInterviewList(prev => sortInterviewsByDate(prev.filter(item => item.id !== id)));
+        setSelectedInterviewId(null);
+        setSelectedInterview(null);
+        setPrepMode('interview');
       } else {
-        setDetailError('Unable to load interview details.');
+        setSelectedInterviewId(id);
+        setSelectedInterview(record);
+        setPrepMode('history');
       }
+    } catch (err) {
+      console.error(err);
+      setDetailError('Unable to load interview details.');
       setSelectedInterviewId(null);
       setSelectedInterview(null);
       setPrepMode('interview');

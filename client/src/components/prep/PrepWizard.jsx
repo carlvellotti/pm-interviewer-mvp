@@ -26,13 +26,14 @@ import {
 } from '../../atoms/prepState.js';
 import {
   fetchConfiguration,
-  fetchCustomCategories,
-  createCustomCategory,
-  updateCustomCategory,
-  deleteCustomCategory,
   uploadJobDescription,
   startInterviewSession
 } from '../../services/api.js';
+import {
+  getCustomCategories,
+  saveCustomCategory,
+  deleteCustomCategory
+} from '../../services/localStorage.js';
 import QuestionSection from './QuestionSection.jsx';
 
 function ensureArray(value) {
@@ -132,7 +133,7 @@ export default function PrepWizard() {
       setJdUploadState({ status: 'idle', error: '', promptSummary: '', generatedCategories: [] });
       setJdSummary('');
 
-      const categories = await fetchCustomCategories();
+      const categories = getCustomCategories();
       setCustomCategories(ensureArray(categories));
 
       setPrepLoaded(true);
@@ -188,31 +189,39 @@ export default function PrepWizard() {
   );
 
   const handleCustomCategoryCreate = useCallback(
-    async payload => {
-      const category = await createCustomCategory(payload);
+    payload => {
+      const category = saveCustomCategory(payload);
       setCustomCategories(prev => [...prev, category]);
     },
     [setCustomCategories]
   );
 
   const handleCustomCategoryUpdate = useCallback(
-    async (id, updates) => {
+    (id, updates) => {
       try {
-        const updated = await updateCustomCategory(id, updates);
+        // Get existing category and merge with updates
+        const existing = customCategories.find(c => c.id === id);
+        if (!existing) {
+          throw new Error('Category not found');
+        }
+        const updated = saveCustomCategory({ ...existing, ...updates, id });
         setCustomCategories(prev => prev.map(category => (category.id === id ? updated : category)));
       } catch (error) {
         console.error('Failed to update category', error);
         setPrepError(error?.message || 'Unable to update category.');
       }
     },
-    [setCustomCategories, setPrepError]
+    [customCategories, setCustomCategories, setPrepError]
   );
 
   const handleCustomCategoryDelete = useCallback(
-    async id => {
+    id => {
       try {
-        await deleteCustomCategory(id);
         const removed = customCategories.find(category => category.id === id);
+        const deleted = deleteCustomCategory(id);
+        if (!deleted) {
+          throw new Error('Category not found');
+        }
         setCustomCategories(prev => prev.filter(category => category.id !== id));
         if (removed && Array.isArray(removed.questions)) {
           const removedIds = new Set(removed.questions.map(question => question.id));
@@ -284,9 +293,9 @@ export default function PrepWizard() {
     try {
       setCustomActionState({ status: 'saving', error: '' });
       if (editingCategoryId) {
-        await handleCustomCategoryUpdate(editingCategoryId, { title: draftTitle.trim(), questions });
+        handleCustomCategoryUpdate(editingCategoryId, { title: draftTitle.trim(), questions });
       } else {
-        await handleCustomCategoryCreate({ title: draftTitle.trim(), questions });
+        handleCustomCategoryCreate({ title: draftTitle.trim(), questions });
       }
       closeCustomDialog();
     } catch (error) {

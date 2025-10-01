@@ -11,16 +11,7 @@ import multer from 'multer';
 import mammoth from 'mammoth';
 import { createRequire } from 'module';
 import WordExtractor from 'word-extractor';
-import {
-  getInterviewById,
-  listInterviews,
-  saveInterview,
-  listUserCategories,
-  getUserCategoryById,
-  saveUserCategory,
-  updateUserCategory,
-  deleteUserCategory
-} from './interviewStore.js';
+// Note: interviewStore.js removed - all data now stored in localStorage on frontend
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,8 +27,6 @@ const REALTIME_BASE_URL = process.env.REALTIME_BASE_URL || 'https://api.openai.c
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
-
-const USER_PLACEHOLDER_ID = 'local';
 
 const questionBank = [
   {
@@ -391,66 +380,7 @@ function buildSummaryPrompt(transcript) {
     `Each bullet must be brief and actionable. Do not add extra keys or commentary.`;
 }
 
-app.get('/interview/preferences/categories', (_req, res) => {
-  try {
-    const categories = listUserCategories(USER_PLACEHOLDER_ID);
-    res.json({ categories });
-  } catch (error) {
-    console.error('Error listing custom categories:', error);
-    res.status(500).json({ error: 'Failed to load custom categories.' });
-  }
-});
-
-app.post('/interview/preferences/categories', (req, res) => {
-  try {
-    const { title, questions } = req.body ?? {};
-    const category = saveUserCategory({
-      userId: USER_PLACEHOLDER_ID,
-      title,
-      questions
-    });
-    res.status(201).json(category);
-  } catch (error) {
-    console.error('Error creating custom category:', error);
-    const status = error.message === 'Category title is required' ? 400 : 500;
-    res.status(status).json({ error: status === 400 ? error.message : 'Failed to create category.' });
-  }
-});
-
-app.patch('/interview/preferences/categories/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const { title, questions } = req.body ?? {};
-    const category = updateUserCategory({
-      id,
-      userId: USER_PLACEHOLDER_ID,
-      title,
-      questions
-    });
-    if (!category) {
-      return res.status(404).json({ error: 'Category not found.' });
-    }
-    res.json(category);
-  } catch (error) {
-    console.error('Error updating custom category:', error);
-    res.status(500).json({ error: 'Failed to update category.' });
-  }
-});
-
-app.delete('/interview/preferences/categories/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const existing = getUserCategoryById(id, USER_PLACEHOLDER_ID);
-    if (!existing) {
-      return res.status(404).json({ error: 'Category not found.' });
-    }
-    deleteUserCategory(id, USER_PLACEHOLDER_ID);
-    res.status(204).send();
-  } catch (error) {
-    console.error('Error deleting custom category:', error);
-    res.status(500).json({ error: 'Failed to delete category.' });
-  }
-});
+// Note: Category endpoints removed - now handled by localStorage on frontend
 
 function handleUploadError(err, res) {
   if (!err) return false;
@@ -776,64 +706,7 @@ app.post('/interview/summary', async (req, res) => {
   }
 });
 
-app.post('/interview/save', (req, res) => {
-  try {
-    const {
-      id,
-      title,
-      transcript,
-      evaluation,
-      metadata,
-      createdAt,
-      updatedAt
-    } = req.body ?? {};
-
-    if (!Array.isArray(transcript)) {
-      return res.status(400).json({ error: 'Transcript must be an array.' });
-    }
-    if (typeof evaluation !== 'object' || evaluation === null) {
-      return res.status(400).json({ error: 'Evaluation must be provided.' });
-    }
-
-    const record = saveInterview({
-      id,
-      title,
-      transcript,
-      evaluation,
-      metadata,
-      createdAt,
-      updatedAt
-    });
-
-    res.status(201).json(record);
-  } catch (error) {
-    console.error('Error saving interview:', error);
-    res.status(500).json({ error: 'Failed to save interview.' });
-  }
-});
-
-app.get('/interview/history', (_req, res) => {
-  try {
-    const records = listInterviews();
-    res.json({ interviews: records });
-  } catch (error) {
-    console.error('Error listing interviews:', error);
-    res.status(500).json({ error: 'Failed to list interviews.' });
-  }
-});
-
-app.get('/interview/history/:id', (req, res) => {
-  try {
-    const record = getInterviewById(req.params.id);
-    if (!record) {
-      return res.status(404).json({ error: 'Interview not found.' });
-    }
-    res.json(record);
-  } catch (error) {
-    console.error('Error fetching interview:', error);
-    res.status(500).json({ error: 'Failed to fetch interview.' });
-  }
-});
+// Note: Interview save/history endpoints removed - now handled by localStorage on frontend
 
 app.post('/realtime/session', async (req, res) => {
   try {

@@ -42,39 +42,7 @@ export async function fetchConfiguration() {
   return handleResponse(response);
 }
 
-export async function fetchCustomCategories() {
-  const response = await fetch(`${API_BASE_URL}/categories`);
-  const { categories = [] } = await handleResponse(response);
-  return categories;
-}
-
-export async function createCustomCategory(payload) {
-  const response = await fetch(`${API_BASE_URL}/categories`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  return handleResponse(response);
-}
-
-export async function updateCustomCategory(id, payload) {
-  const response = await fetch(`${API_BASE_URL}/categories/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  return handleResponse(response);
-}
-
-export async function deleteCustomCategory(id) {
-  const response = await fetch(`${API_BASE_URL}/categories/${id}`, {
-    method: 'DELETE'
-  });
-  if (!response.ok && response.status !== 204) {
-    await handleResponse(response);
-  }
-  return true;
-}
+// Note: Custom category functions moved to localStorage.js
 
 export async function uploadJobDescription(payload) {
   const response = await fetch(`${API_BASE_URL}/interview/jd`, {
@@ -97,24 +65,7 @@ export async function startInterviewSession(payload) {
   return handleResponse(response);
 }
 
-export async function fetchInterviewHistory() {
-  const response = await fetch(`${API_BASE_URL}/interview/history`);
-  return handleResponse(response);
-}
-
-export async function fetchInterviewDetail(id) {
-  const response = await fetch(`${API_BASE_URL}/interview/history/${id}`);
-  return handleResponse(response);
-}
-
-export async function saveInterview(payload) {
-  const response = await fetch(`${API_BASE_URL}/interview/save`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  return handleResponse(response);
-}
+// Note: Interview history and save functions moved to localStorage.js
 
 export async function summarizeInterview(conversation) {
   const response = await fetch(`${API_BASE_URL}/interview/summary`, {

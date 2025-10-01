@@ -13,7 +13,8 @@ import {
   selectedInterviewIdAtom,
   interviewListAtom
 } from './atoms/prepState.js';
-import { saveInterview, summarizeInterview, createRealtimeSession } from './services/api.js';
+import { summarizeInterview, createRealtimeSession } from './services/api.js';
+import { saveInterview } from './services/localStorage.js';
 import { useRealtimeInterview } from './hooks/useRealtimeInterview.js';
 import { useInterviewMessages } from './hooks/useInterviewMessages.js';
 import {
@@ -105,7 +106,7 @@ function InterviewExperience() {
         }
       })();
 
-      const record = await saveInterview({
+      const record = saveInterview({
         transcript: conversation,
         evaluation: evaluationPayload,
         metadata,
